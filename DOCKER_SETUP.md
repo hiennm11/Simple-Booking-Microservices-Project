@@ -123,8 +123,9 @@ Ingestion: http://localhost:5342
 
 ### RabbitMQ Management UI
 - **URL:** http://localhost:15672
-- **Username:** guest
-- **Password:** guest
+- **Username:** Check your `.env` file (`RABBITMQ_USER`)
+- **Password:** Check your `.env` file (`RABBITMQ_PASSWORD`)
+- **Default:** `bookinguser` / `RabbitMQ@2025!SecurePass`
 - **Features:**
   - View queues and exchanges
   - Monitor message rates
@@ -133,6 +134,9 @@ Ingestion: http://localhost:5342
 
 ### Seq Logging UI
 - **URL:** http://localhost:5341
+- **Username:** `admin`
+- **Password:** Check your `.env` file (`SEQ_ADMIN_PASSWORD`)
+- **Default:** `Admin@2025!SeqPass`
 - **Features:**
   - Structured log viewing
   - Log filtering and searching
