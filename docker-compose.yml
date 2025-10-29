@@ -106,7 +106,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
-      ConnectionStrings__DefaultConnection: "Host=${USERDB_HOST};Port=${USERDB_PORT};Database=${USERDB_NAME};Username=${USERDB_USER};Password=${USERDB_PASSWORD}"
+      ConnectionStrings__DefaultConnection: "Host=${USERDB_HOST};Port=5432;Database=${USERDB_NAME};Username=${USERDB_USER};Password=${USERDB_PASSWORD}"
       Jwt__Key: "${JWT_SECRET_KEY}"
       Jwt__Issuer: "${JWT_ISSUER}"
       Jwt__Audience: "${JWT_AUDIENCE}"
@@ -135,7 +135,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
-      ConnectionStrings__DefaultConnection: "Host=${BOOKINGDB_HOST};Port=${BOOKINGDB_PORT};Database=${BOOKINGDB_NAME};Username=${BOOKINGDB_USER};Password=${BOOKINGDB_PASSWORD}"
+      ConnectionStrings__DefaultConnection: "Host=${BOOKINGDB_HOST};Port=5432;Database=${BOOKINGDB_NAME};Username=${BOOKINGDB_USER};Password=${BOOKINGDB_PASSWORD}"
       RabbitMQ__HostName: "${RABBITMQ_HOST}"
       RabbitMQ__Port: "${RABBITMQ_PORT}"
       RabbitMQ__UserName: "${RABBITMQ_USER}"
@@ -167,7 +167,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
-      MongoDB__ConnectionString: "mongodb://${PAYMENTDB_USER}:${PAYMENTDB_PASSWORD}@${PAYMENTDB_HOST}:${PAYMENTDB_PORT}/${PAYMENTDB_NAME}?authSource=admin"
+      MongoDB__ConnectionString: "mongodb://${PAYMENTDB_USER}:${PAYMENTDB_PASSWORD}@${PAYMENTDB_HOST}:27017/${PAYMENTDB_NAME}?authSource=admin"
       RabbitMQ__HostName: "${RABBITMQ_HOST}"
       RabbitMQ__Port: "${RABBITMQ_PORT}"
       RabbitMQ__UserName: "${RABBITMQ_USER}"
