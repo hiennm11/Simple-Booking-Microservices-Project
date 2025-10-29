@@ -128,7 +128,7 @@ This project simulates a simple **Booking System** with the following services:
 ## 🗓️ Development Phases
 
 ### Phase 1: Foundation Setup (Week 1-2)
-- [ ] Create solution structure with 4 projects (UserService, BookingService, PaymentService, ApiGateway)
+- [x] Create solution structure with 4 projects (UserService, BookingService, PaymentService, ApiGateway)
 - [ ] Setup Docker Compose with RabbitMQ, PostgreSQL, MongoDB
 - [ ] Create Shared library project for:
   - Event contracts (DTOs)
