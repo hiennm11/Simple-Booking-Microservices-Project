@@ -129,12 +129,12 @@ This project simulates a simple **Booking System** with the following services:
 
 ### Phase 1: Foundation Setup (Week 1-2)
 - [x] Create solution structure with 4 projects (UserService, BookingService, PaymentService, ApiGateway)
-- [ ] Setup Docker Compose with RabbitMQ, PostgreSQL, MongoDB
-- [ ] Create Shared library project for:
+- [x] Setup Docker Compose with RabbitMQ, PostgreSQL, MongoDB
+- [x] Create Shared library project for:
   - Event contracts (DTOs)
   - RabbitMQ wrapper/helper classes
   - Common utilities and base classes
-- [ ] Verify all containers running and accessible
+- [x] Verify all containers running and accessible
 - [ ] Basic health check endpoints for each service
 
 ### Phase 2: Core Services Implementation (Week 3-4)

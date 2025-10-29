@@ -40,6 +40,12 @@ artifacts/
 # Docker
 docker-compose.override.yml
 
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
 # Rider
 .idea/
 *.sln.iml

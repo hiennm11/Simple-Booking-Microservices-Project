@@ -1,0 +1,111 @@
+services:
+  # PostgreSQL for UserService
+  userdb:
+    image: postgres:16-alpine
+    container_name: userdb
+    environment:
+      POSTGRES_USER: userservice
+      POSTGRES_PASSWORD: userservice123
+      POSTGRES_DB: userdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - userdb_data:/var/lib/postgresql/data
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U userservice -d userdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for BookingService
+  bookingdb:
+    image: postgres:16-alpine
+    container_name: bookingdb
+    environment:
+      POSTGRES_USER: bookingservice
+      POSTGRES_PASSWORD: bookingservice123
+      POSTGRES_DB: bookingdb
+    ports:
+      - "5433:5432"
+    volumes:
+      - bookingdb_data:/var/lib/postgresql/data
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookingservice -d bookingdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB for PaymentService
+  paymentdb:
+    image: mongo:7.0
+    container_name: paymentdb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: paymentservice
+      MONGO_INITDB_ROOT_PASSWORD: paymentservice123
+      MONGO_INITDB_DATABASE: paymentdb
+    ports:
+      - "27017:27017"
+    volumes:
+      - paymentdb_data:/data/db
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Seq (Optional) - Structured logging and monitoring
+  seq:
+    image: datalust/seq:latest
+    container_name: seq
+    environment:
+      ACCEPT_EULA: Y
+    ports:
+      - "5341:80"     # Seq UI
+      - "5342:5342"   # Ingestion endpoint
+    volumes:
+      - seq_data:/data
+    networks:
+      - booking-network
+    restart: unless-stopped
+
+volumes:
+  userdb_data:
+    driver: local
+  bookingdb_data:
+    driver: local
+  paymentdb_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  seq_data:
+    driver: local
+
+networks:
+  booking-network:
+    driver: bridge
