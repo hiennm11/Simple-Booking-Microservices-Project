@@ -110,6 +110,8 @@ services:
       Jwt__Key: "${JWT_SECRET_KEY}"
       Jwt__Issuer: "${JWT_ISSUER}"
       Jwt__Audience: "${JWT_AUDIENCE}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
     ports:
       - "${USERSERVICE_PORT}:80"
     depends_on:
@@ -138,6 +140,8 @@ services:
       RabbitMQ__Port: "${RABBITMQ_PORT}"
       RabbitMQ__UserName: "${RABBITMQ_USER}"
       RabbitMQ__Password: "${RABBITMQ_PASSWORD}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
     ports:
       - "${BOOKINGSERVICE_PORT}:80"
     depends_on:
@@ -168,6 +172,8 @@ services:
       RabbitMQ__Port: "${RABBITMQ_PORT}"
       RabbitMQ__UserName: "${RABBITMQ_USER}"
       RabbitMQ__Password: "${RABBITMQ_PASSWORD}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
     ports:
       - "${PAYMENTSERVICE_PORT}:80"
     depends_on:
@@ -193,6 +199,8 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
     ports:
       - "${APIGATEWAY_PORT}:80"
     depends_on:
