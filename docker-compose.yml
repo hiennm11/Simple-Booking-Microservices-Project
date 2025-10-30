@@ -107,9 +107,10 @@ services:
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
       ConnectionStrings__DefaultConnection: "Host=${USERDB_HOST};Port=5432;Database=${USERDB_NAME};Username=${USERDB_USER};Password=${USERDB_PASSWORD}"
-      Jwt__Key: "${JWT_SECRET_KEY}"
-      Jwt__Issuer: "${JWT_ISSUER}"
-      Jwt__Audience: "${JWT_AUDIENCE}"
+      JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
+      JwtSettings__Issuer: "${JWT_ISSUER}"
+      JwtSettings__Audience: "${JWT_AUDIENCE}"
+      JwtSettings__ExpirationMinutes: "${JWT_EXPIRY_MINUTES}"
       Seq__ServerUrl: "${SEQ_URL}"
       Seq__ApiKey: "${SEQ_API_KEY}"
     ports:
@@ -189,7 +190,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ApiGateway (ASP.NET Core - Ocelot/YARP)
+  # ApiGateway (ASP.NET Core - YARP)
   apigateway:
     build:
       context: ./src/ApiGateway
@@ -199,6 +200,9 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
+      JwtSettings__Issuer: "${JWT_ISSUER}"
+      JwtSettings__Audience: "${JWT_AUDIENCE}"
       Seq__ServerUrl: "${SEQ_URL}"
       Seq__ApiKey: "${SEQ_API_KEY}"
     ports:

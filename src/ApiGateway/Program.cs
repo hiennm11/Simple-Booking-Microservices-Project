@@ -1,4 +1,7 @@
+using System.Text;
 using ApiGateway.Middleware;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +21,52 @@ builder.Host.UseSerilog();
 
 // Add services to the container.
 builder.Services.AddOpenApi();
+
+// Add JWT Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? "YourDefaultSecretKeyForDevelopment123!";
+var issuer = jwtSettings["Issuer"] ?? "UserService";
+var audience = jwtSettings["Audience"] ?? "BookingSystem";
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = issuer,
+            ValidAudience = audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+            ClockSkew = TimeSpan.Zero // Remove default 5 minute tolerance
+        };
+        
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Log.Warning("JWT Authentication failed: {Error}", context.Exception.Message);
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var userId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                Log.Information("JWT Token validated for user: {UserId}", userId);
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    // Define authorization policy for authenticated users
+    options.AddPolicy("authenticated", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+    });
+});
 
 // Add CORS policy
 builder.Services.AddCors(options =>
@@ -50,6 +99,13 @@ app.UseGlobalExceptionHandler();
 
 // Enable CORS
 app.UseCors();
+
+// Enable Authentication & Authorization (MUST be before MapReverseProxy)
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Forward user claims to downstream services (after authentication)
+app.UseUserClaimsForwarding();
 
 // Use request/response logging
 app.UseRequestResponseLogging();

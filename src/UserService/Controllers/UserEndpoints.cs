@@ -25,7 +25,8 @@ public static class UserEndpoints
         group.MapGet("/{id:guid}", GetUserById)
             .WithName("GetUserById")
             .Produces<ApiResponse<UserResponse>>(StatusCodes.Status200OK)
-            .Produces<ApiResponse<UserResponse>>(StatusCodes.Status404NotFound);
+            .Produces<ApiResponse<UserResponse>>(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "UserService" }))
             .WithName("UserServiceHealth")
@@ -42,7 +43,7 @@ public static class UserEndpoints
         }
 
         var user = await authService.RegisterAsync(request);
-        
+
         if (user == null)
         {
             return Results.BadRequest(
@@ -62,7 +63,7 @@ public static class UserEndpoints
         }
 
         var loginResponse = await authService.LoginAsync(request);
-        
+
         if (loginResponse == null)
         {
             return Results.Unauthorized();
@@ -72,16 +73,39 @@ public static class UserEndpoints
     }
 
     private static async Task<IResult> GetUserById(
+        HttpContext httpContext,
         [FromRoute] Guid id,
         [FromServices] IAuthService authService)
     {
-        var user = await authService.GetUserByIdAsync(id);
+        // Check if request came from API Gateway
+        var forwardedBy = httpContext.Request.Headers["X-Forwarded-By"].FirstOrDefault();
+        var isFromGateway = forwardedBy == "ApiGateway";
         
+        // Get user ID from claims forwarded by API Gateway
+        var userId = httpContext.Request.Headers["X-User-Id"].FirstOrDefault();
+
+        var parsable = Guid.TryParse(userId, out var userGuid);
+        if (string.IsNullOrEmpty(userId) || !parsable)
+        {
+            return Results.Unauthorized(); // No user info = not authenticated
+        }
+
+        // Optionally verify the requesting user exists
+        var currentUser = await authService.GetUserByIdAsync(userGuid);
+        if (currentUser == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // Get the requested user
+        var user = await authService.GetUserByIdAsync(id);
+
         if (user == null)
         {
             return Results.NotFound(ApiResponse<UserResponse>.ErrorResponse("User not found"));
         }
 
+        // Optionally add metadata to response indicating if request came via gateway
         return Results.Ok(ApiResponse<UserResponse>.SuccessResponse(user));
     }
 
