@@ -1,6 +1,93 @@
-@ApiGateway_HostAddress = http://localhost:5231
+@apiGateway_HostAddress = http://localhost:5000
 
-GET {{ApiGateway_HostAddress}}/weatherforecast/
+### Get Gateway Info
+GET {{apiGateway_HostAddress}}/
 Accept: application/json
+
+###
+
+### Check Gateway Health
+GET {{apiGateway_HostAddress}}/health
+Accept: application/json
+
+###
+
+# ===========================================
+# User Service Endpoints (via API Gateway)
+# ===========================================
+
+### Register a new user
+POST {{apiGateway_HostAddress}}/api/users/register
+Content-Type: application/json
+
+{
+  "username": "johndoe",
+  "email": "john.doe@example.com",
+  "password": "Password123!",
+  "firstName": "John",
+  "lastName": "Doe"
+}
+
+###
+
+### Login user
+POST {{apiGateway_HostAddress}}/api/users/login
+Content-Type: application/json
+
+{
+  "username": "johndoe",
+  "password": "Password123!"
+}
+
+###
+
+### Get user by ID
+GET {{apiGateway_HostAddress}}/api/users/550e8400-e29b-41d4-a716-446655440000
+Accept: application/json
+
+###
+
+# ===========================================
+# Booking Service Endpoints (via API Gateway)
+# ===========================================
+
+### Get all bookings (placeholder)
+GET {{apiGateway_HostAddress}}/api/bookings
+Accept: application/json
+
+###
+
+### Create booking (placeholder)
+POST {{apiGateway_HostAddress}}/api/bookings
+Content-Type: application/json
+
+{
+  "userId": "550e8400-e29b-41d4-a716-446655440000",
+  "serviceType": "Hotel",
+  "startDate": "2025-11-01",
+  "endDate": "2025-11-05"
+}
+
+###
+
+# ===========================================
+# Payment Service Endpoints (via API Gateway)
+# ===========================================
+
+### Get all payments (placeholder)
+GET {{apiGateway_HostAddress}}/api/payments
+Accept: application/json
+
+###
+
+### Process payment (placeholder)
+POST {{apiGateway_HostAddress}}/api/payments
+Content-Type: application/json
+
+{
+  "bookingId": "550e8400-e29b-41d4-a716-446655440000",
+  "amount": 299.99,
+  "paymentMethod": "CreditCard"
+}
 
 ###
