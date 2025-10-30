@@ -1,6 +1,62 @@
 @UserService_HostAddress = http://localhost:5266
 
-GET {{UserService_HostAddress}}/weatherforecast/
+### Health Check
+GET {{UserService_HostAddress}}/health
+Accept: application/json
+
+###
+
+### Register New User
+POST {{UserService_HostAddress}}/api/users/register
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "email": "testuser@example.com",
+  "password": "Test@123456",
+  "firstName": "Test",
+  "lastName": "User",
+  "phoneNumber": "+1234567899"
+}
+
+###
+
+### Login - Admin User
+POST {{UserService_HostAddress}}/api/users/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "Admin@123"
+}
+
+###
+
+### Login - John Doe (Seeded User)
+POST {{UserService_HostAddress}}/api/users/login
+Content-Type: application/json
+
+{
+  "username": "john.doe",
+  "password": "Password@123"
+}
+
+###
+
+### Login - Jane Smith (Seeded User)
+POST {{UserService_HostAddress}}/api/users/login
+Content-Type: application/json
+
+{
+  "username": "jane.smith",
+  "password": "Password@123"
+}
+
+###
+
+### Get User By ID (Replace with actual user ID from login response)
+@userId = 00000000-0000-0000-0000-000000000000
+GET {{UserService_HostAddress}}/api/users/{{userId}}
 Accept: application/json
 
 ###

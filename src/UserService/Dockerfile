@@ -1,16 +1,21 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# copy csproj and nuget.config then restore as distinct layers
-COPY *.csproj nuget.config ./
-ENV NUGET_PACKAGES=/root/.nuget/packages
-ENV NUGET_FALLBACK_PACKAGES=/root/.nuget/fallback
-RUN mkdir -p /root/.nuget/packages /root/.nuget/fallback \
-	&& dotnet restore
+# Copy solution and project files
+COPY ["UserService/UserService.csproj", "UserService/"]
+COPY ["UserService/nuget.config", "UserService/"]
+COPY ["Shared/Shared.csproj", "Shared/"]
 
-# copy everything else and build
-COPY . ./
-RUN dotnet publish -c Release -o /app/publish --no-restore
+# Restore dependencies
+RUN dotnet restore "UserService/UserService.csproj"
+
+# Copy source code
+COPY ["UserService/", "UserService/"]
+COPY ["Shared/", "Shared/"]
+
+# Build and publish
+WORKDIR /src/UserService
+RUN dotnet publish -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

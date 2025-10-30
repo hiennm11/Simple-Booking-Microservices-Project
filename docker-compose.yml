@@ -99,8 +99,8 @@ services:
   # UserService (ASP.NET Core)
   userservice:
     build:
-      context: ./src/UserService
-      dockerfile: Dockerfile
+      context: ./src
+      dockerfile: UserService/Dockerfile
     container_name: userservice
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}

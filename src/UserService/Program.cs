@@ -1,4 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Serilog;
+using UserService.Controllers;
+using UserService.Data;
+using UserService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,11 +20,17 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// Add health checks with PostgreSQL database check
+// Add DbContext
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<UserDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+// Add services
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// Add health checks with PostgreSQL database check
 builder.Services.AddHealthChecks()
     .AddNpgSql(
         connectionString!,
@@ -30,6 +40,27 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
+// Apply migrations and seed data automatically
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<UserDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        
+        // Apply migrations
+        dbContext.Database.Migrate();
+        Log.Information("Database migrations applied successfully");
+        
+        // Seed initial data
+        await UserDbSeeder.SeedAsync(dbContext, logger);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "An error occurred while applying migrations or seeding data");
+    }
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -38,24 +69,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+// Map user endpoints
+app.MapUserEndpoints();
 
 // Map health check endpoint
 app.MapHealthChecks("/health");
@@ -64,8 +79,3 @@ app.Run();
 
 // Clean up Serilog
 Log.CloseAndFlush();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
