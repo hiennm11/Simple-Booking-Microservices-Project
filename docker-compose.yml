@@ -1,0 +1,235 @@
+services:
+  # PostgreSQL for UserService
+  userdb:
+    image: postgres:16-alpine
+    container_name: userdb
+    environment:
+      POSTGRES_USER: ${USERDB_USER}
+      POSTGRES_PASSWORD: ${USERDB_PASSWORD}
+      POSTGRES_DB: ${USERDB_NAME}
+    ports:
+      - "${USERDB_PORT}:5432"
+    volumes:
+      - userdb_data:/var/lib/postgresql/data
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USERDB_USER} -d ${USERDB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for BookingService
+  bookingdb:
+    image: postgres:16-alpine
+    container_name: bookingdb
+    environment:
+      POSTGRES_USER: ${BOOKINGDB_USER}
+      POSTGRES_PASSWORD: ${BOOKINGDB_PASSWORD}
+      POSTGRES_DB: ${BOOKINGDB_NAME}
+    ports:
+      - "${BOOKINGDB_PORT}:5432"
+    volumes:
+      - bookingdb_data:/var/lib/postgresql/data
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOKINGDB_USER} -d ${BOOKINGDB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB for PaymentService
+  paymentdb:
+    image: mongo:7.0
+    container_name: paymentdb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${PAYMENTDB_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${PAYMENTDB_PASSWORD}
+      MONGO_INITDB_DATABASE: ${PAYMENTDB_NAME}
+    ports:
+      - "${PAYMENTDB_PORT}:27017"
+    volumes:
+      - paymentdb_data:/data/db
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    ports:
+      - "${RABBITMQ_PORT}:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Seq (Optional) - Structured logging and monitoring
+  seq:
+    image: datalust/seq:latest
+    container_name: seq
+    environment:
+      ACCEPT_EULA: Y
+      SEQ_FIRSTRUN_ADMINPASSWORD: ${SEQ_ADMIN_PASSWORD:-Admin@2025!SeqPass}
+    ports:
+      - "5341:80"     # Seq UI
+      - "5342:5342"   # Ingestion endpoint
+    volumes:
+      - seq_data:/data
+    networks:
+      - booking-network
+    restart: unless-stopped
+
+  # UserService (ASP.NET Core)
+  userservice:
+    build:
+      context: ./src/UserService
+      dockerfile: Dockerfile
+    container_name: userservice
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      DOTNET_RUNNING_IN_CONTAINER: true
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      ConnectionStrings__DefaultConnection: "Host=${USERDB_HOST};Port=5432;Database=${USERDB_NAME};Username=${USERDB_USER};Password=${USERDB_PASSWORD}"
+      Jwt__Key: "${JWT_SECRET_KEY}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
+    ports:
+      - "${USERSERVICE_PORT}:80"
+    depends_on:
+      userdb:
+        condition: service_healthy
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # BookingService (ASP.NET Core)
+  bookingservice:
+    build:
+      context: ./src/BookingService
+      dockerfile: Dockerfile
+    container_name: bookingservice
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      DOTNET_RUNNING_IN_CONTAINER: true
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      ConnectionStrings__DefaultConnection: "Host=${BOOKINGDB_HOST};Port=5432;Database=${BOOKINGDB_NAME};Username=${BOOKINGDB_USER};Password=${BOOKINGDB_PASSWORD}"
+      RabbitMQ__HostName: "${RABBITMQ_HOST}"
+      RabbitMQ__Port: "${RABBITMQ_PORT}"
+      RabbitMQ__UserName: "${RABBITMQ_USER}"
+      RabbitMQ__Password: "${RABBITMQ_PASSWORD}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
+    ports:
+      - "${BOOKINGSERVICE_PORT}:80"
+    depends_on:
+      bookingdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PaymentService (ASP.NET Core)
+  paymentservice:
+    build:
+      context: ./src/PaymentService
+      dockerfile: Dockerfile
+    container_name: paymentservice
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      DOTNET_RUNNING_IN_CONTAINER: true
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      MongoDB__ConnectionString: "mongodb://${PAYMENTDB_USER}:${PAYMENTDB_PASSWORD}@${PAYMENTDB_HOST}:27017/${PAYMENTDB_NAME}?authSource=admin"
+      RabbitMQ__HostName: "${RABBITMQ_HOST}"
+      RabbitMQ__Port: "${RABBITMQ_PORT}"
+      RabbitMQ__UserName: "${RABBITMQ_USER}"
+      RabbitMQ__Password: "${RABBITMQ_PASSWORD}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
+    ports:
+      - "${PAYMENTSERVICE_PORT}:80"
+    depends_on:
+      paymentdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ApiGateway (ASP.NET Core - Ocelot/YARP)
+  apigateway:
+    build:
+      context: ./src/ApiGateway
+      dockerfile: Dockerfile
+    container_name: apigateway
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      DOTNET_RUNNING_IN_CONTAINER: true
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
+    ports:
+      - "${APIGATEWAY_PORT}:80"
+    depends_on:
+      userservice:
+        condition: service_started
+      bookingservice:
+        condition: service_started
+      paymentservice:
+        condition: service_started
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  userdb_data:
+    driver: local
+  bookingdb_data:
+    driver: local
+  paymentdb_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  seq_data:
+    driver: local
+
+networks:
+  booking-network:
+    driver: bridge
