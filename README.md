@@ -139,7 +139,7 @@ This project simulates a simple **Booking System** with the following services:
 - [x] **Multi-stage Dockerfiles for optimized builds**
 - [x] **Environment configuration with .env file**
 - [x] **Infrastructure services running and healthy**
-- [ ] Basic health check endpoints for each service (implementation pending)
+- [x] Basic health check endpoints for each service
 
 ### Phase 2: Core Services Implementation (Week 3-4)
 - [ ] **UserService:**
