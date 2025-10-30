@@ -1,8 +1,32 @@
+using Serilog;
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.WithProperty("Service", "BookingService")
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.Seq(
+        serverUrl: builder.Configuration["Seq:ServerUrl"] ?? "http://seq:5341",
+        apiKey: builder.Configuration["Seq:ApiKey"])
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+// Add health checks with PostgreSQL database check
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddHealthChecks()
+    .AddNpgSql(
+        connectionString!,
+        name: "bookingdb",
+        failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+        tags: new[] { "db", "postgresql", "bookingdb" });
 
 var app = builder.Build();
 
@@ -33,7 +57,13 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
+// Map health check endpoint
+app.MapHealthChecks("/health");
+
 app.Run();
+
+// Clean up Serilog
+Log.CloseAndFlush();
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
