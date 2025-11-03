@@ -1,4 +1,10 @@
 using Serilog;
+using Microsoft.EntityFrameworkCore;
+using BookingService.Data;
+using BookingService.Services;
+using BookingService.EventBus;
+using BookingService.Consumers;
+using Shared.EventBus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,12 +21,31 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// Add services to the container
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
-// Add health checks with PostgreSQL database check
+// Configure Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<BookingDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+});
+
+// Configure RabbitMQ settings
+builder.Services.Configure<RabbitMQSettings>(builder.Configuration.GetSection("RabbitMQ"));
+
+// Register EventBus
+builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
+
+// Register Services
+builder.Services.AddScoped<IBookingService, BookingServiceImpl>();
+
+// Register Background Services (Consumers)
+builder.Services.AddHostedService<PaymentSucceededConsumer>();
+
+// Add health checks with PostgreSQL database check
 builder.Services.AddHealthChecks()
     .AddNpgSql(
         connectionString!,
@@ -30,7 +55,23 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Run database migrations automatically
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
+        Log.Information("Applying database migrations...");
+        await dbContext.Database.MigrateAsync();
+        Log.Information("Database migrations applied successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "An error occurred while migrating the database");
+    }
+}
+
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -38,34 +79,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.UseAuthorization();
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapControllers();
 
 // Map health check endpoint
 app.MapHealthChecks("/health");
+
+Log.Information("BookingService is starting...");
 
 app.Run();
 
 // Clean up Serilog
 Log.CloseAndFlush();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
