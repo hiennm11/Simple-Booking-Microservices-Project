@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using Shared.Contracts;
 using BookingService.EventBus;
 using BookingService.Data;
@@ -10,6 +11,7 @@ using BookingService.Services;
 using Microsoft.EntityFrameworkCore;
 using Polly;
 using Polly.Retry;
+using System.Net.Sockets;
 
 namespace BookingService.Consumers;
 
@@ -22,6 +24,7 @@ public class PaymentSucceededConsumer : BackgroundService
     private readonly RabbitMQSettings _settings;
     private readonly ILogger<PaymentSucceededConsumer> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
+    private readonly ResiliencePipeline _connectionPipeline;
     private IConnection? _connection;
     private IModel? _channel;
     private int _retryCount = 0;
@@ -53,6 +56,32 @@ public class PaymentSucceededConsumer : BackgroundService
                 }
             })
             .Build();
+
+        // Create resilience pipeline for RabbitMQ connection establishment
+        _connectionPipeline = new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = 10,
+                Delay = TimeSpan.FromSeconds(5),
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                MaxDelay = TimeSpan.FromSeconds(60),
+                ShouldHandle = new PredicateBuilder()
+                    .Handle<BrokerUnreachableException>()
+                    .Handle<SocketException>()
+                    .Handle<TimeoutException>(),
+                OnRetry = args =>
+                {
+                    _logger.LogWarning(
+                        "PaymentSucceededConsumer RabbitMQ connection retry {Attempt}/{MaxAttempts} after {Delay}ms. " +
+                        "Waiting for RabbitMQ to become available...",
+                        args.AttemptNumber,
+                        10,
+                        args.RetryDelay.TotalMilliseconds);
+                    return ValueTask.CompletedTask;
+                }
+            })
+            .Build();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -80,18 +109,26 @@ public class PaymentSucceededConsumer : BackgroundService
 
     private void InitializeRabbitMQ()
     {
-        var factory = new ConnectionFactory
+        // Execute connection with retry policy
+        _connectionPipeline.Execute(() =>
         {
-            HostName = _settings.HostName,
-            Port = _settings.Port,
-            UserName = _settings.UserName,
-            Password = _settings.Password,
-            VirtualHost = _settings.VirtualHost,
-            DispatchConsumersAsync = true
-        };
+            var factory = new ConnectionFactory
+            {
+                HostName = _settings.HostName,
+                Port = _settings.Port,
+                UserName = _settings.UserName,
+                Password = _settings.Password,
+                VirtualHost = _settings.VirtualHost,
+                DispatchConsumersAsync = true,
+                AutomaticRecoveryEnabled = true, // Enable automatic recovery
+                NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
+            };
 
-        _connection = factory.CreateConnection();
-        _channel = _connection.CreateModel();
+            _connection = factory.CreateConnection();
+            _logger.LogInformation("PaymentSucceededConsumer established connection to RabbitMQ");
+        });
+
+        _channel = _connection!.CreateModel();
 
         var queueName = _settings.Queues.GetValueOrDefault("PaymentSucceeded", "payment_succeeded");
         
