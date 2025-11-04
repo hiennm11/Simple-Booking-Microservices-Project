@@ -6,6 +6,7 @@ using PaymentService.EventBus;
 using PaymentService.Models;
 using Shared.Contracts;
 using Shared.EventBus;
+using Polly;
 
 namespace PaymentService.Services;
 
@@ -17,17 +18,20 @@ public class PaymentServiceImpl : IPaymentService
     private readonly MongoDbContext _dbContext;
     private readonly IEventBus _eventBus;
     private readonly RabbitMQSettings _rabbitMQSettings;
+    private readonly ResiliencePipeline _eventPublishingPipeline;
     private readonly ILogger<PaymentServiceImpl> _logger;
 
     public PaymentServiceImpl(
         MongoDbContext dbContext,
         IEventBus eventBus,
         IOptions<RabbitMQSettings> rabbitMQSettings,
+        IResiliencePipelineService resiliencePipelineService,
         ILogger<PaymentServiceImpl> logger)
     {
         _dbContext = dbContext;
         _eventBus = eventBus;
         _rabbitMQSettings = rabbitMQSettings.Value;
+        _eventPublishingPipeline = resiliencePipelineService.GetEventPublishingPipeline();
         _logger = logger;
     }
 
@@ -172,14 +176,21 @@ public class PaymentServiceImpl : IPaymentService
 
         try
         {
-            await _eventBus.PublishAsync(paymentEvent, queueName);
+            // Execute with retry policy using Polly resilience pipeline
+            await _eventPublishingPipeline.ExecuteAsync(async ct =>
+            {
+                await _eventBus.PublishAsync(paymentEvent, queueName, ct);
+            }, CancellationToken.None);
+
             _logger.LogInformation("PaymentSucceeded event published for PaymentId: {PaymentId}, BookingId: {BookingId}", 
                 payment.Id, payment.BookingId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to publish PaymentSucceeded event for PaymentId: {PaymentId}", payment.Id);
-            // Note: In production, you might want to implement retry logic or store the event for later publishing
+            _logger.LogError(ex, "Failed to publish PaymentSucceeded event after retries for PaymentId: {PaymentId}", payment.Id);
+            // Event is lost after all retry attempts
+            // In production, consider storing in outbox table for later retry or manual intervention
+            throw;
         }
     }
 
