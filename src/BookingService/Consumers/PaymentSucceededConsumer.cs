@@ -6,7 +6,10 @@ using RabbitMQ.Client.Events;
 using Shared.Contracts;
 using BookingService.EventBus;
 using BookingService.Data;
+using BookingService.Services;
 using Microsoft.EntityFrameworkCore;
+using Polly;
+using Polly.Retry;
 
 namespace BookingService.Consumers;
 
@@ -18,8 +21,11 @@ public class PaymentSucceededConsumer : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly RabbitMQSettings _settings;
     private readonly ILogger<PaymentSucceededConsumer> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
     private IConnection? _connection;
     private IModel? _channel;
+    private int _retryCount = 0;
+    private const int MAX_REQUEUE_ATTEMPTS = 3;
 
     public PaymentSucceededConsumer(
         IServiceProvider serviceProvider,
@@ -29,6 +35,24 @@ public class PaymentSucceededConsumer : BackgroundService
         _serviceProvider = serviceProvider;
         _settings = settings.Value;
         _logger = logger;
+        
+        // Create inline resilience pipeline for message processing
+        _resiliencePipeline = new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = 3,
+                Delay = TimeSpan.FromSeconds(2),
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                OnRetry = args =>
+                {
+                    _logger.LogWarning(
+                        "Retrying message processing. Attempt {Attempt}/{MaxAttempts}",
+                        args.AttemptNumber, 3);
+                    return ValueTask.CompletedTask;
+                }
+            })
+            .Build();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -108,15 +132,21 @@ public class PaymentSucceededConsumer : BackgroundService
             if (paymentEvent?.Data == null)
             {
                 _logger.LogWarning("Invalid PaymentSucceeded event format");
-                _channel!.BasicNack(ea.DeliveryTag, false, false);
+                // ❌ Permanent failure - don't requeue
+                _channel!.BasicNack(ea.DeliveryTag, false, requeue: false);
                 return;
             }
 
-            // Process the payment event
-            await ProcessPaymentSucceededAsync(paymentEvent);
+            // ✅ Process with retry policy
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                await ProcessPaymentSucceededAsync(paymentEvent);
+            }, CancellationToken.None);
 
-            // Acknowledge the message
+            // ✅ Success - acknowledge
             _channel!.BasicAck(ea.DeliveryTag, false);
+            _retryCount = 0; // Reset counter
+            
             _logger.LogInformation("PaymentSucceeded event processed successfully for BookingId: {BookingId}", 
                 paymentEvent.Data.BookingId);
         }
@@ -124,8 +154,28 @@ public class PaymentSucceededConsumer : BackgroundService
         {
             _logger.LogError(ex, "Error processing PaymentSucceeded event: {Message}", message);
             
-            // Reject and requeue the message
-            _channel!.BasicNack(ea.DeliveryTag, false, true);
+            _retryCount++;
+            
+            if (_retryCount >= MAX_REQUEUE_ATTEMPTS)
+            {
+                // ❌ Max retries reached - send to dead letter queue or log
+                _logger.LogError(
+                    "Message failed after {Attempts} requeue attempts. Moving to DLQ.",
+                    MAX_REQUEUE_ATTEMPTS);
+                
+                _channel!.BasicNack(ea.DeliveryTag, false, requeue: false);
+                _retryCount = 0;
+                
+                // TODO: Store in dead-letter table for manual investigation
+            }
+            else
+            {
+                // ⚠️ Requeue for retry
+                _logger.LogWarning("Requeuing message. Attempt {Attempt}/{Max}",
+                    _retryCount, MAX_REQUEUE_ATTEMPTS);
+                
+                _channel!.BasicNack(ea.DeliveryTag, false, requeue: true);
+            }
         }
     }
 
