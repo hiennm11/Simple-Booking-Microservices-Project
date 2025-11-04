@@ -1,4 +1,9 @@
 using Serilog;
+using PaymentService.Data;
+using PaymentService.EventBus;
+using PaymentService.Services;
+using PaymentService.Consumers;
+using Shared.EventBus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,9 +20,27 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// Add services to the container
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+
+// Configure MongoDB
+builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDB"));
+builder.Services.AddSingleton<MongoDbContext>();
+
+// Configure RabbitMQ settings
+builder.Services.Configure<RabbitMQSettings>(builder.Configuration.GetSection("RabbitMQ"));
+
+// Register EventBus
+builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
+
+// Register Services
+builder.Services.AddScoped<IPaymentService, PaymentServiceImpl>();
+
+// Register Background Services (Consumers)
+// Uncomment the line below to enable automatic payment processing when bookings are created
+// builder.Services.AddHostedService<BookingCreatedConsumer>();
 
 // Add health checks with MongoDB database check (use MongoDB:ConnectionString)
 var mongoConn = builder.Configuration["MongoDB:ConnectionString"];
@@ -38,11 +61,9 @@ else
     hcBuilder.AddCheck("paymentdb-config", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Degraded("MongoDB connection string not configured"));
 }
 
-// (MongoConnectionHealthCheck moved to a separate file under HealthChecks/ to avoid top-level type declaration issues)
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -50,24 +71,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapControllers();
 
 // Map health check endpoint
 app.MapHealthChecks("/health");
@@ -76,8 +80,3 @@ app.Run();
 
 // Clean up Serilog
 Log.CloseAndFlush();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

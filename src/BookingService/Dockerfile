@@ -1,16 +1,28 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# copy csproj and nuget.config then restore as distinct layers
-COPY *.csproj nuget.config ./
-ENV NUGET_PACKAGES=/root/.nuget/packages
-ENV NUGET_FALLBACK_PACKAGES=/root/.nuget/fallback
-RUN mkdir -p /root/.nuget/packages /root/.nuget/fallback \
-	&& dotnet restore
+COPY ["BookingService/BookingService.csproj", "BookingService/"]
+COPY ["BookingService/nuget.config", "BookingService/"]
+COPY ["Shared/Shared.csproj", "Shared/"]
 
-# copy everything else and build
-COPY . ./
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet restore "BookingService/BookingService.csproj"
+
+COPY ["BookingService/", "BookingService/"]
+COPY ["Shared/", "Shared/"]
+
+WORKDIR /src/BookingService
+RUN dotnet publish -c Release -o /app/publish
+
+# # copy csproj and nuget.config then restore as distinct layers
+# COPY *.csproj nuget.config ./
+# ENV NUGET_PACKAGES=/root/.nuget/packages
+# ENV NUGET_FALLBACK_PACKAGES=/root/.nuget/fallback
+# RUN mkdir -p /root/.nuget/packages /root/.nuget/fallback \
+# 	&& dotnet restore
+
+# # copy everything else and build
+# COPY . ./
+# RUN dotnet publish -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

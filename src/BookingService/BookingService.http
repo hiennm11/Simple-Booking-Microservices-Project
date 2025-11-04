@@ -1,6 +1,45 @@
 @BookingService_HostAddress = http://localhost:5023
+@bookingId = {{createBooking.response.body.$.id}}
+@userId = a3bb189e-8bf9-3888-9912-ace4e6543002
 
-GET {{BookingService_HostAddress}}/weatherforecast/
+### Health Check
+GET {{BookingService_HostAddress}}/health
 Accept: application/json
+
+### Create a new booking
+# @name createBooking
+POST {{BookingService_HostAddress}}/api/bookings
+Content-Type: application/json
+
+{
+  "userId": "{{userId}}",
+  "roomId": "ROOM-101",
+  "amount": 500000
+}
+
+### Get booking by ID
+GET {{BookingService_HostAddress}}/api/bookings/{{bookingId}}
+Accept: application/json
+
+### Get all bookings for a user
+GET {{BookingService_HostAddress}}/api/bookings/user/{{userId}}
+Accept: application/json
+
+### Update booking status to CONFIRMED
+PATCH {{BookingService_HostAddress}}/api/bookings/{{bookingId}}/status
+Content-Type: application/json
+
+{
+  "status": "CONFIRMED"
+}
+
+### Update booking status to CANCELLED
+PATCH {{BookingService_HostAddress}}/api/bookings/{{bookingId}}/status
+Content-Type: application/json
+
+{
+  "status": "CANCELLED",
+  "cancellationReason": "Customer requested cancellation"
+}
 
 ###
