@@ -1,0 +1,330 @@
+{
+  "format": "seq-dashboard-export",
+  "version": "2025.2",
+  "note": "This file contains Seq dashboard configurations in the native Seq JSON format. Import via Seq UI or use as reference for manual creation.",
+  "dashboards": [
+    {
+      "OwnerId": null,
+      "Title": "Retry Overview Dashboard",
+      "IsProtected": false,
+      "SignalExpression": null,
+      "Charts": [
+        {
+          "Id": "chart-retry-total",
+          "Title": "Total Retry Attempts (Last Hour)",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-retry-total",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Retries"
+                }
+              ],
+              "Where": "@Message like '%retry%' ci and @Message like '%Attempt%' ci",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Value",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 3,
+            "HeightRows": 1
+          },
+          "Description": "Count of all retry attempts in the last hour"
+        },
+    {
+      "name": "Retry Attempts by Service",
+      "description": "Bar chart showing retry count per service",
+      "query": "SELECT Service as key, COUNT(*) as value FROM stream WHERE @Message LIKE '%retry%' AND @Message LIKE '%Attempt%' AND @Timestamp > Now() - 24h GROUP BY Service ORDER BY value DESC",
+      "category": "Retry Overview",
+      "chartType": "bar",
+      "refreshSeconds": 60
+    },
+    {
+      "name": "Retry Rate Over Time",
+      "description": "Line chart showing retry rate over the last hour",
+      "query": "SELECT DATEPART(minute, @Timestamp) as key, COUNT(*) as value FROM stream WHERE @Message LIKE '%retry%' AND @Timestamp > Now() - 1h GROUP BY DATEPART(minute, @Timestamp) ORDER BY key",
+      "category": "Retry Overview",
+      "chartType": "timeSeries",
+      "refreshSeconds": 30
+    },
+    {
+      "name": "Failed Operations After Retries",
+      "description": "Table of operations that failed after all retry attempts",
+      "query": "SELECT @Timestamp as [Time], Service, @Message as [Message] FROM stream WHERE (@Message LIKE '%failed after%retries%' OR @Message LIKE '%Moving to DLQ%') AND @Timestamp > Now() - 1h ORDER BY @Timestamp DESC",
+      "category": "Retry Overview",
+      "chartType": "table",
+      "refreshSeconds": 30
+    },
+    {
+      "name": "Event Publishing Success Rate",
+      "description": "Percentage of successful event publishing operations",
+      "query": "SELECT CAST(SUM(CASE WHEN @Message LIKE '%event published%' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as decimal(5,2)) as value FROM stream WHERE (@Message LIKE '%event published%' OR @Message LIKE '%Failed to publish%') AND @Timestamp > Now() - 1h",
+      "category": "Event Publishing",
+      "chartType": "gauge",
+      "refreshSeconds": 60,
+      "thresholds": {
+        "green": ">= 95",
+        "yellow": "85-95",
+        "red": "< 85"
+      }
+    },
+    {
+      "name": "Event Publishing Retries by Service",
+      "description": "Count of publishing retry attempts per service",
+      "query": "SELECT Service, COUNT(*) as Retries FROM stream WHERE @Message LIKE '%Publishing%retry%' AND @Timestamp > Now() - 1h GROUP BY Service ORDER BY Retries DESC",
+      "category": "Event Publishing",
+      "chartType": "bar",
+      "refreshSeconds": 60
+    },
+    {
+      "name": "Failed Event Publishing",
+      "description": "List of failed event publishing attempts",
+      "query": "SELECT @Timestamp, Service, @Message FROM stream WHERE @Message LIKE '%Failed to publish%' AND @Timestamp > Now() - 1h ORDER BY @Timestamp DESC",
+      "category": "Event Publishing",
+      "chartType": "table",
+      "refreshSeconds": 60
+    },
+    {
+      "name": "RabbitMQ Connection Status",
+      "description": "Current RabbitMQ connection retry activity",
+      "query": "SELECT Service, COUNT(*) as ConnectionRetries FROM stream WHERE @Message LIKE '%RabbitMQ connection retry%' AND @Timestamp > Now() - 5m GROUP BY Service",
+      "category": "RabbitMQ Connection",
+      "chartType": "bar",
+      "refreshSeconds": 30
+    },
+    {
+      "name": "RabbitMQ Connection Timeline",
+      "description": "Connection retry events over time",
+      "query": "SELECT @Timestamp, Service, @Message FROM stream WHERE @Message LIKE '%RabbitMQ connection%' AND @Timestamp > Now() - 1h ORDER BY @Timestamp DESC",
+      "category": "RabbitMQ Connection",
+      "chartType": "table",
+      "refreshSeconds": 60
+    },
+    {
+      "name": "Consumer Requeue Events",
+      "description": "Count of message requeue attempts",
+      "query": "SELECT Service, COUNT(*) as RequeueCount FROM stream WHERE @Message LIKE '%Requeuing message%' AND @Timestamp > Now() - 1h GROUP BY Service",
+      "category": "Message Consumption",
+      "chartType": "bar",
+      "refreshSeconds": 60
+    },
+    {
+      "name": "Dead Letter Queue Messages",
+      "description": "Messages that were sent to DLQ",
+      "query": "SELECT @Timestamp, Service, BookingId, @Message FROM stream WHERE @Message LIKE '%Rejecting message%' AND @Timestamp > Now() - 24h ORDER BY @Timestamp DESC",
+      "category": "Message Consumption",
+      "chartType": "table",
+      "refreshSeconds": 120
+    },
+    {
+      "name": "System Health Score",
+      "description": "Overall system health percentage (100% = no errors)",
+      "query": "SELECT CAST((1.0 - CAST(COUNT(CASE WHEN @Level = 'Error' THEN 1 END) as FLOAT) / NULLIF(COUNT(*), 0)) * 100 as DECIMAL(5,2)) as value FROM stream WHERE @Timestamp > Now() - 1h",
+      "category": "System Health",
+      "chartType": "gauge",
+      "refreshSeconds": 60,
+      "thresholds": {
+        "green": ">= 95",
+        "yellow": "90-95",
+        "red": "< 90"
+      }
+    },
+    {
+      "name": "Error Rate Percentage",
+      "description": "Percentage of log entries that are errors",
+      "query": "SELECT CAST((CAST(COUNT(CASE WHEN @Level = 'Error' OR @Level = 'Fatal' THEN 1 END) as FLOAT) / NULLIF(COUNT(*), 0)) * 100 as DECIMAL(5,2)) as ErrorRate FROM stream WHERE @Timestamp > Now() - 1h",
+      "category": "Error Analysis",
+      "chartType": "value",
+      "refreshSeconds": 60
+    },
+    {
+      "name": "Most Common Exceptions",
+      "description": "Top exceptions by count",
+      "query": "SELECT @ExceptionType, COUNT(*) as Count FROM stream WHERE @Exception IS NOT NULL AND @Timestamp > Now() - 24h GROUP BY @ExceptionType ORDER BY Count DESC",
+      "category": "Error Analysis",
+      "chartType": "bar",
+      "refreshSeconds": 300
+    },
+    {
+      "name": "Recent Errors",
+      "description": "Latest error messages",
+      "query": "SELECT @Timestamp, Service, @Level, @Message FROM stream WHERE @Level = 'Error' AND @Timestamp > Now() - 1h ORDER BY @Timestamp DESC",
+      "category": "Error Analysis",
+      "chartType": "table",
+      "refreshSeconds": 30
+    },
+    {
+      "name": "Booking Flow Timeline",
+      "description": "Track a specific booking through the system (replace YOUR-BOOKING-ID)",
+      "query": "SELECT BookingId, @Timestamp, Service, @Message FROM stream WHERE BookingId = 'YOUR-BOOKING-ID' ORDER BY @Timestamp",
+      "category": "Booking Flow",
+      "chartType": "table",
+      "refreshSeconds": 30,
+      "note": "Replace YOUR-BOOKING-ID with actual booking ID"
+    },
+    {
+      "name": "Service Activity Summary",
+      "description": "Overview of log activity per service",
+      "query": "SELECT Service, COUNT(*) as TotalLogs, COUNT(CASE WHEN @Level = 'Error' THEN 1 END) as Errors, COUNT(CASE WHEN @Message LIKE '%retry%' THEN 1 END) as Retries FROM stream WHERE @Timestamp > Now() - 1h GROUP BY Service",
+      "category": "Performance Metrics",
+      "chartType": "table",
+      "refreshSeconds": 60
+    }
+  ],
+  "dashboards": [
+    {
+      "name": "Retry Overview Dashboard",
+      "description": "Main dashboard for monitoring retry activity",
+      "charts": [
+        {
+          "title": "Total Retry Attempts",
+          "queryName": "Total Retry Attempts (Last Hour)",
+          "position": {
+            "row": 1,
+            "col": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "title": "Retry Attempts by Service",
+          "queryName": "Retry Attempts by Service",
+          "position": {
+            "row": 1,
+            "col": 4,
+            "width": 9,
+            "height": 4
+          }
+        },
+        {
+          "title": "Retry Rate Over Time",
+          "queryName": "Retry Rate Over Time",
+          "position": {
+            "row": 3,
+            "col": 1,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "title": "Failed Operations",
+          "queryName": "Failed Operations After Retries",
+          "position": {
+            "row": 7,
+            "col": 1,
+            "width": 12,
+            "height": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "System Health Dashboard",
+      "description": "Overall system health monitoring",
+      "charts": [
+        {
+          "title": "System Health Score",
+          "queryName": "System Health Score",
+          "position": {
+            "row": 1,
+            "col": 1,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "title": "Error Rate",
+          "queryName": "Error Rate Percentage",
+          "position": {
+            "row": 1,
+            "col": 5,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "title": "Service Activity",
+          "queryName": "Service Activity Summary",
+          "position": {
+            "row": 4,
+            "col": 1,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "title": "Recent Errors",
+          "queryName": "Recent Errors",
+          "position": {
+            "row": 8,
+            "col": 1,
+            "width": 12,
+            "height": 4
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "exportDate": "2025-11-05",
+    "version": "1.0",
+    "project": "Simple-Booking-Microservices-Project",
+    "phase": "Phase 5 - Observability",
+    "seqVersion": "2025.2",
+    "totalQueries": 17,
+    "totalDashboards": 2,
+    "instructions": {
+      "import": [
+        "Seq 2025.2 Manual Import Steps:",
+        "",
+        "FOR QUERIES:",
+        "1. Open Seq at http://localhost:5341",
+        "2. Go to Events page",
+        "3. Click search box, then 'SQL' button",
+        "4. Copy a query from 'query' field above",
+        "5. Paste and press Enter to test",
+        "6. Click bookmark/star icon to save",
+        "7. Enter the 'name' from JSON",
+        "8. Repeat for each query you want",
+        "",
+        "FOR DASHBOARDS:",
+        "1. Go to Dashboards in left sidebar",
+        "2. Click 'Create dashboard'",
+        "3. Enter dashboard name from JSON",
+        "4. Click 'Add chart' for each chart in the dashboard",
+        "5. Select chart type (value/timeSeries/bar/table/gauge)",
+        "6. Enter query or select saved query",
+        "7. Set title and refresh interval",
+        "8. Arrange by dragging to match positions",
+        "",
+        "CHART TYPE MAPPING:",
+        "- value: Single number metric",
+        "- gauge: 0-100% indicator with thresholds",
+        "- bar: Bar chart for comparisons",
+        "- timeSeries: Line/area chart over time",
+        "- table: Detailed event listing"
+      ],
+      "tips": [
+        "Start with 'Retry Overview Dashboard' - it's the most useful",
+        "Save queries before creating dashboards to make setup easier",
+        "Adjust time ranges (1h, 24h) based on your needs",
+        "Set appropriate refresh intervals for each chart",
+        "Create custom queries by modifying existing ones"
+      ]
+    }
+  }
+}

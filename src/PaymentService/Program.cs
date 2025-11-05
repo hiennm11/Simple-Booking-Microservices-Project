@@ -35,6 +35,9 @@ builder.Services.Configure<RabbitMQSettings>(builder.Configuration.GetSection("R
 // Register EventBus
 builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
 
+// Register Resilience Pipeline Service
+builder.Services.AddSingleton<IResiliencePipelineService, ResiliencePipelineService>();
+
 // Register Services
 builder.Services.AddScoped<IPaymentService, PaymentServiceImpl>();
 

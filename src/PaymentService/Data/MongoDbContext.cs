@@ -20,7 +20,7 @@ public class MongoDbContext
         _database = client.GetDatabase(_settings.DatabaseName);
     }
 
-    public IMongoCollection<Payment> Payments => 
+    public virtual IMongoCollection<Payment> Payments => 
         _database.GetCollection<Payment>(_settings.Collections.GetValueOrDefault("Payments", "payments"));
 }
 

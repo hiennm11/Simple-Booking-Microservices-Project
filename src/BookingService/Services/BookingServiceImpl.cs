@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Shared.Contracts;
 using Shared.EventBus;
+using Polly;
 
 namespace BookingService.Services;
 
@@ -28,17 +29,20 @@ public class BookingServiceImpl : IBookingService
     private readonly IEventBus _eventBus;
     private readonly ILogger<BookingServiceImpl> _logger;
     private readonly EventBus.RabbitMQSettings _rabbitMQSettings;
+    private readonly ResiliencePipeline _eventPublishingPipeline;
 
     public BookingServiceImpl(
         BookingDbContext dbContext,
         IEventBus eventBus,
         IOptions<EventBus.RabbitMQSettings> rabbitMQSettings,
+        IResiliencePipelineService resiliencePipelineService,
         ILogger<BookingServiceImpl> logger)
     {
         _dbContext = dbContext;
         _eventBus = eventBus;
         _logger = logger;
         _rabbitMQSettings = rabbitMQSettings.Value;
+        _eventPublishingPipeline = resiliencePipelineService.GetEventPublishingPipeline();
     }
 
     public async Task<BookingResponse> CreateBookingAsync(CreateBookingRequest request, CancellationToken cancellationToken = default)
@@ -79,13 +83,20 @@ public class BookingServiceImpl : IBookingService
             };
 
             var queueName = _rabbitMQSettings.Queues.GetValueOrDefault("BookingCreated", "booking_created");
-            await _eventBus.PublishAsync(bookingCreatedEvent, queueName, cancellationToken);
+            
+            // Execute with retry policy using Polly resilience pipeline
+            await _eventPublishingPipeline.ExecuteAsync(async ct =>
+            {
+                await _eventBus.PublishAsync(bookingCreatedEvent, queueName, ct);
+            }, cancellationToken);
 
             _logger.LogInformation("BookingCreated event published for booking {BookingId}", booking.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to publish BookingCreated event for booking {BookingId}", booking.Id);
+            _logger.LogError(ex, "Failed to publish BookingCreated event after retries for booking {BookingId}", booking.Id);
+            // Event is lost after all retry attempts
+            // In production, consider storing in outbox table for later retry or manual intervention
             // Don't fail the booking creation if event publishing fails
         }
 

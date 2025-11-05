@@ -1,0 +1,558 @@
+{
+  "format": "seq-dashboard-export-2025.2",
+  "version": "1.0",
+  "description": "Seq 2025.2 native dashboard format for Simple Booking Microservices retry monitoring",
+  "dashboards": [
+    {
+      "OwnerId": null,
+      "Title": "Retry Overview Dashboard",
+      "IsProtected": false,
+      "SignalExpression": null,
+      "Id": "dashboard-retry-overview",
+      "Charts": [
+        {
+          "Id": "chart-1",
+          "Title": "Total Retry Attempts",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-1",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Retries"
+                }
+              ],
+              "Where": "@Message like '%retry%' ci and @Message like '%Attempt%' ci",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Value",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 3,
+            "HeightRows": 1
+          },
+          "Description": "Total retry attempts in the last hour"
+        },
+        {
+          "Id": "chart-2",
+          "Title": "Retry Attempts by Service",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-2",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "count"
+                }
+              ],
+              "Where": "@Message like '%retry%' ci",
+              "SignalExpression": null,
+              "GroupBy": ["Service"],
+              "DisplayStyle": {
+                "Type": "Bar",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 9,
+            "HeightRows": 1
+          },
+          "Description": "Bar chart showing retry count per service"
+        },
+        {
+          "Id": "chart-3",
+          "Title": "Retry Rate Over Time",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-3",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Retries"
+                }
+              ],
+              "Where": "@Message like '%retry%' ci",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Line",
+                "LineFillToZeroY": true,
+                "LineShowMarkers": false,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 12,
+            "HeightRows": 2
+          },
+          "Description": "Retry rate trend over time"
+        },
+        {
+          "Id": "chart-4",
+          "Title": "Failed Operations (After All Retries)",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-4",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Failed"
+                }
+              ],
+              "Where": "(@Message like '%failed after%retries%' ci or @Message like '%Moving to DLQ%' ci)",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Bar",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": true,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Reds"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 12,
+            "HeightRows": 1
+          },
+          "Description": "Operations that failed after exhausting all retries"
+        }
+      ]
+    },
+    {
+      "OwnerId": null,
+      "Title": "System Health Dashboard",
+      "IsProtected": false,
+      "SignalExpression": null,
+      "Id": "dashboard-system-health",
+      "Charts": [
+        {
+          "Id": "chart-5",
+          "Title": "System Health Score",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-5",
+              "Measurements": [
+                {
+                  "Value": "100 - (count(case when @Level in ['Error', 'Fatal'] then 1 end) * 100.0 / count(*))",
+                  "Label": "Health %"
+                }
+              ],
+              "Where": null,
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Value",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Greens"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 4,
+            "HeightRows": 1
+          },
+          "Description": "Overall system health percentage (100% = no errors)"
+        },
+        {
+          "Id": "chart-6",
+          "Title": "Event Count by Level",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-6",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "count"
+                }
+              ],
+              "Where": null,
+              "SignalExpression": null,
+              "GroupBy": ["@Level"],
+              "DisplayStyle": {
+                "Type": "Pie",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 4,
+            "HeightRows": 1
+          },
+          "Description": "Distribution of log levels"
+        },
+        {
+          "Id": "chart-7",
+          "Title": "Errors and Exceptions",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-7",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "count"
+                }
+              ],
+              "Where": "@Exception is not null or @Level in ['Error', 'Fatal'] ci",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Bar",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": true,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Reds"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 4,
+            "HeightRows": 1
+          },
+          "Description": "Count of errors and exceptions over time"
+        },
+        {
+          "Id": "chart-8",
+          "Title": "Service Activity Summary",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-8",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Total"
+                },
+                {
+                  "Value": "count(case when @Level = 'Error' then 1 end)",
+                  "Label": "Errors"
+                },
+                {
+                  "Value": "count(case when @Message like '%retry%' ci then 1 end)",
+                  "Label": "Retries"
+                }
+              ],
+              "Where": null,
+              "SignalExpression": null,
+              "GroupBy": ["Service"],
+              "DisplayStyle": {
+                "Type": "Bar",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 12,
+            "HeightRows": 2
+          },
+          "Description": "Activity metrics per service"
+        }
+      ]
+    },
+    {
+      "OwnerId": null,
+      "Title": "Event Publishing Health",
+      "IsProtected": false,
+      "SignalExpression": null,
+      "Id": "dashboard-event-publishing",
+      "Charts": [
+        {
+          "Id": "chart-9",
+          "Title": "Publishing Success Rate",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-9",
+              "Measurements": [
+                {
+                  "Value": "count(case when @Message like '%event published%' ci then 1 end) * 100.0 / count(*)",
+                  "Label": "Success %"
+                }
+              ],
+              "Where": "(@Message like '%event published%' ci or @Message like '%Failed to publish%' ci)",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Value",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Greens"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 4,
+            "HeightRows": 1
+          },
+          "Description": "Percentage of successful event publications"
+        },
+        {
+          "Id": "chart-10",
+          "Title": "Publishing Retries by Service",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-10",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Retries"
+                }
+              ],
+              "Where": "@Message like '%Publishing%retry%' ci",
+              "SignalExpression": null,
+              "GroupBy": ["Service"],
+              "DisplayStyle": {
+                "Type": "Bar",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 8,
+            "HeightRows": 1
+          },
+          "Description": "Event publishing retry attempts per service"
+        },
+        {
+          "Id": "chart-11",
+          "Title": "Failed Publishing Events",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-11",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Failed"
+                }
+              ],
+              "Where": "@Message like '%Failed to publish%' ci",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Line",
+                "LineFillToZeroY": true,
+                "LineShowMarkers": false,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Reds"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 12,
+            "HeightRows": 2
+          },
+          "Description": "Failed event publishing attempts over time"
+        }
+      ]
+    },
+    {
+      "OwnerId": null,
+      "Title": "RabbitMQ Connection Health",
+      "IsProtected": false,
+      "SignalExpression": null,
+      "Id": "dashboard-rabbitmq",
+      "Charts": [
+        {
+          "Id": "chart-12",
+          "Title": "Connection Retry Count",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-12",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Retries"
+                }
+              ],
+              "Where": "@Message like '%RabbitMQ connection retry%' ci",
+              "SignalExpression": null,
+              "GroupBy": ["Service"],
+              "DisplayStyle": {
+                "Type": "Bar",
+                "LineFillToZeroY": false,
+                "LineShowMarkers": true,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Reds"
+              },
+              "Having": null,
+              "OrderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 6,
+            "HeightRows": 1
+          },
+          "Description": "RabbitMQ connection retry attempts by service"
+        },
+        {
+          "Id": "chart-13",
+          "Title": "Connection Timeline",
+          "SignalExpression": null,
+          "Queries": [
+            {
+              "Id": "query-13",
+              "Measurements": [
+                {
+                  "Value": "count(*)",
+                  "Label": "Events"
+                }
+              ],
+              "Where": "@Message like '%RabbitMQ connection%' ci",
+              "SignalExpression": null,
+              "GroupBy": [],
+              "DisplayStyle": {
+                "Type": "Line",
+                "LineFillToZeroY": true,
+                "LineShowMarkers": false,
+                "BarOverlaySum": false,
+                "UseLogarithmicScale": false,
+                "SuppressLegend": false,
+                "Palette": "Default"
+              },
+              "Having": null,
+              "OrderBy": [],
+              "Limit": null
+            }
+          ],
+          "DisplayStyle": {
+            "WidthColumns": 6,
+            "HeightRows": 1
+          },
+          "Description": "Connection events over time"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "project": "Simple-Booking-Microservices-Project",
+    "phase": "Phase 5 - Observability",
+    "created": "2025-11-05",
+    "seqVersion": "2025.2",
+    "totalDashboards": 4,
+    "instructions": {
+      "howToImport": [
+        "Currently Seq 2025.2 may not support direct JSON import for dashboards.",
+        "Use this file as a reference to manually recreate dashboards.",
+        "",
+        "Manual Creation Steps:",
+        "1. In Seq: Dashboards > Create dashboard",
+        "2. Enter Title from JSON",
+        "3. For each Chart:",
+        "   - Click 'Add chart'",
+        "   - Set Title from chart.Title",
+        "   - In Measurements: Enter Value expressions",
+        "   - In Where: Enter Where clause (if any)",
+        "   - In Group By: Enter GroupBy fields",
+        "   - Set Display Style Type (Line/Bar/Pie/Value)",
+        "   - Set Width/Height from DisplayStyle.WidthColumns/HeightRows",
+        "4. Arrange charts by dragging",
+        "5. Dashboard auto-saves"
+      ],
+      "chartTypes": {
+        "Value": "Single number metric",
+        "Line": "Time series line chart",
+        "Bar": "Bar chart for comparisons",
+        "Pie": "Pie chart for distributions"
+      },
+      "whereSyntax": [
+        "Use 'ci' suffix for case-insensitive matching",
+        "Example: @Message like '%retry%' ci",
+        "Combine with 'and', 'or'",
+        "Use 'is not null' for existence checks"
+      ]
+    }
+  }
+}
