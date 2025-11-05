@@ -4,6 +4,26 @@ A lightweight microservices-based demo built with **ASP.NET Core**, **RabbitMQ**
 
 ---
 
+## 🚀 Quick Start
+
+```cmd
+REM 1. Start all services
+docker-compose up -d
+
+REM 2. Run complete system test
+test-system.bat
+
+REM 3. View logs and monitoring
+REM - Seq Logs: http://localhost:5341
+REM - RabbitMQ: http://localhost:15672
+```
+
+**For detailed testing and load testing**, see:
+- [Testing Quick Start Guide](TESTING_QUICK_START.md) - Quick commands for testing
+- [End-to-End Testing Guide](docs/E2E_TESTING_GUIDE.md) - Complete testing documentation
+
+---
+
 ## 🧭 Overview
 
 This project simulates a simple **Booking System** with the following services:
