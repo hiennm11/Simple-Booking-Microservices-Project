@@ -3,7 +3,8 @@ param(
     [int]$ConcurrentFlows = 5,
     [string]$GatewayUrl = "http://localhost:5000",
     [string]$BookingUrl = "http://localhost:5002",
-    [string]$PaymentUrl = "http://localhost:5003"
+    [string]$PaymentUrl = "http://localhost:5003",
+    [switch]$UseAuthentication = $false
 )
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -12,6 +13,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Total Flows:       $NumberOfFlows" -ForegroundColor White
 Write-Host "Concurrent:        $ConcurrentFlows" -ForegroundColor White
 Write-Host "Gateway URL:       $GatewayUrl" -ForegroundColor White
+Write-Host "Authentication:    $(if ($UseAuthentication) { 'Enabled' } else { 'Disabled' })" -ForegroundColor White
 Write-Host ""
 
 # Check PowerShell version
@@ -63,6 +65,27 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
         # API returns wrapped response: { success, message, data: { id, username, ... } }
         $userId = $user.data.id
         
+        # Step 1.5: Login to get JWT token (if authentication enabled)
+        $token = $null
+        $headers = @{}
+        if ($using:UseAuthentication) {
+            $loginBody = @{
+                Username = $username
+                Password = "Test@2025!Pass"
+            } | ConvertTo-Json
+            
+            $loginResponse = Invoke-RestMethod -Uri "$gatewayUrl/api/users/login" `
+                -Method Post `
+                -ContentType "application/json" `
+                -Body $loginBody `
+                -TimeoutSec 30
+            
+            $token = $loginResponse.data.token.Trim()
+            $headers = @{
+                "Authorization" = "Bearer $token"
+            }
+        }
+        
         # Step 2: Create booking
         $bookingBody = @{
             UserId = $userId
@@ -70,11 +93,18 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             Amount = Get-Random -Minimum 100000 -Maximum 1000000
         } | ConvertTo-Json
         
-        $booking = Invoke-RestMethod -Uri "$bookingUrl/api/bookings" `
-            -Method Post `
-            -ContentType "application/json" `
-            -Body $bookingBody `
-            -TimeoutSec 30
+        $bookingParams = @{
+            Uri = "$bookingUrl/api/bookings"
+            Method = "Post"
+            ContentType = "application/json"
+            Body = $bookingBody
+            TimeoutSec = 30
+        }
+        if ($headers.Count -gt 0) {
+            $bookingParams['Headers'] = $headers
+        }
+        
+        $booking = Invoke-RestMethod @bookingParams
         
         $bookingId = $booking.id
         $bookingAmount = $booking.amount
@@ -85,19 +115,33 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             Amount = $bookingAmount
         } | ConvertTo-Json
         
-        $payment = Invoke-RestMethod -Uri "$paymentUrl/api/payment/pay" `
-            -Method Post `
-            -ContentType "application/json" `
-            -Body $paymentBody `
-            -TimeoutSec 30
+        $paymentParams = @{
+            Uri = "$paymentUrl/api/payment/pay"
+            Method = "Post"
+            ContentType = "application/json"
+            Body = $paymentBody
+            TimeoutSec = 30
+        }
+        if ($headers.Count -gt 0) {
+            $paymentParams['Headers'] = $headers
+        }
+        
+        $payment = Invoke-RestMethod @paymentParams
         
         # Step 4: Wait for event processing
         Start-Sleep -Milliseconds 2000
         
         # Step 5: Verify booking status
-        $updatedBooking = Invoke-RestMethod -Uri "$bookingUrl/api/bookings/$bookingId" `
-            -Method Get `
-            -TimeoutSec 30
+        $verifyParams = @{
+            Uri = "$bookingUrl/api/bookings/$bookingId"
+            Method = "Get"
+            TimeoutSec = 30
+        }
+        if ($headers.Count -gt 0) {
+            $verifyParams['Headers'] = $headers
+        }
+        
+        $updatedBooking = Invoke-RestMethod @verifyParams
         
         $flowStopwatch.Stop()
         $elapsed = $flowStopwatch.Elapsed.TotalMilliseconds
@@ -167,46 +211,86 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Body $registerBody `
                 -TimeoutSec 30
             
-            # API returns wrapped response: { success, message, data: { id, username, ... } }
-            $userId = $user.data.id
-            
-            # Step 2: Create booking
-            $bookingBody = @{
-                UserId = $userId
-                RoomId = "ROOM-$(Get-Random -Minimum 100 -Maximum 999)"
-                Amount = Get-Random -Minimum 100000 -Maximum 1000000
+        # API returns wrapped response: { success, message, data: { id, username, ... } }
+        $userId = $user.data.id
+        
+        # Step 1.5: Login to get JWT token (if authentication enabled)
+        $token = $null
+        $headers = @{}
+        if ($using:UseAuthentication) {
+            $loginBody = @{
+                Username = $username
+                Password = "Test@2025!Pass"
             } | ConvertTo-Json
             
-            $booking = Invoke-RestMethod -Uri "$BookingUrl/api/bookings" `
+            $loginResponse = Invoke-RestMethod -Uri "$using:GatewayUrl/api/users/login" `
                 -Method Post `
                 -ContentType "application/json" `
-                -Body $bookingBody `
+                -Body $loginBody `
                 -TimeoutSec 30
             
-            $bookingId = $booking.id
-            $bookingAmount = $booking.amount
-            
-            # Step 3: Process payment
-            $paymentBody = @{
-                BookingId = $bookingId
-                Amount = $bookingAmount
-            } | ConvertTo-Json
-            
-            $payment = Invoke-RestMethod -Uri "$PaymentUrl/api/payment/pay" `
-                -Method Post `
-                -ContentType "application/json" `
-                -Body $paymentBody `
-                -TimeoutSec 30
-            
-            # Step 4: Wait for event processing
-            Start-Sleep -Milliseconds 2000
-            
-            # Step 5: Verify booking status
-            $updatedBooking = Invoke-RestMethod -Uri "$BookingUrl/api/bookings/$bookingId" `
-                -Method Get `
-                -TimeoutSec 30
-            
-            $flowStopwatch.Stop()
+            $token = $loginResponse.data.token.Trim()
+            $headers = @{
+                "Authorization" = "Bearer $token"
+            }
+        }
+        
+        # Step 2: Create booking
+        $bookingBody = @{
+            UserId = $userId
+            RoomId = "ROOM-$(Get-Random -Minimum 100 -Maximum 999)"
+            Amount = Get-Random -Minimum 100000 -Maximum 1000000
+        } | ConvertTo-Json
+        
+        $bookingParams = @{
+            Uri = "$using:BookingUrl/api/bookings"
+            Method = "Post"
+            ContentType = "application/json"
+            Body = $bookingBody
+            TimeoutSec = 30
+        }
+        if ($headers.Count -gt 0) {
+            $bookingParams['Headers'] = $headers
+        }
+        
+        $booking = Invoke-RestMethod @bookingParams
+        
+        $bookingId = $booking.id
+        $bookingAmount = $booking.amount
+        
+        # Step 3: Process payment
+        $paymentBody = @{
+            BookingId = $bookingId
+            Amount = $bookingAmount
+        } | ConvertTo-Json
+        
+        $paymentParams = @{
+            Uri = "$using:PaymentUrl/api/payment/pay"
+            Method = "Post"
+            ContentType = "application/json"
+            Body = $paymentBody
+            TimeoutSec = 30
+        }
+        if ($headers.Count -gt 0) {
+            $paymentParams['Headers'] = $headers
+        }
+        
+        $payment = Invoke-RestMethod @paymentParams
+        
+        # Step 4: Wait for event processing
+        Start-Sleep -Milliseconds 2000
+        
+        # Step 5: Verify booking status
+        $verifyParams = @{
+            Uri = "$using:BookingUrl/api/bookings/$bookingId"
+            Method = "Get"
+            TimeoutSec = 30
+        }
+        if ($headers.Count -gt 0) {
+            $verifyParams['Headers'] = $headers
+        }
+        
+        $updatedBooking = Invoke-RestMethod @verifyParams            $flowStopwatch.Stop()
             $elapsed = $flowStopwatch.Elapsed.TotalMilliseconds
             
             if ($updatedBooking.status -eq "CONFIRMED") {

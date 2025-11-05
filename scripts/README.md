@@ -87,8 +87,10 @@ Comprehensive testing suite including unit, integration, E2E, and load tests.
 | Script | Type | Description | Usage |
 |--------|------|-------------|-------|
 | **test-gateway.ps1** | API | Test API Gateway endpoints | `.\scripts\testing\test-gateway.ps1` |
-| **test-gateway-full.ps1** | API | Comprehensive Gateway testing | `.\scripts\testing\test-gateway-full.ps1` |
+| **test-gateway-full.ps1** | API | Comprehensive Gateway testing with auth | `.\scripts\testing\test-gateway-full.ps1` |
+| **test-auth.ps1** | Security | Authentication & authorization tests | `.\scripts\testing\test-auth.ps1` |
 | **test-e2e-simple.ps1** | E2E | Simple end-to-end workflow test | `.\scripts\testing\test-e2e-simple.ps1` |
+| **test-e2e-auth.ps1** | E2E + Auth | E2E test with JWT authentication | `.\scripts\testing\test-e2e-auth.ps1` |
 | **test-e2e-load.ps1** | E2E + Load | End-to-end test with load testing | `.\scripts\testing\test-e2e-load.ps1` |
 | **test-load.ps1** | Load | Load testing with concurrent requests | `.\scripts\testing\test-load.ps1` |
 | **test-load-simple.ps1** | Load | Simple load test with basic metrics | `.\scripts\testing\test-load-simple.ps1` |
@@ -102,7 +104,11 @@ test-health.bat              # Health checks
     ↓
 test-gateway.ps1             # API Gateway tests
     ↓
+test-auth.ps1                # ← Authentication & authorization tests
+    ↓
 test-e2e-simple.ps1          # Basic workflow
+    ↓
+test-e2e-auth.ps1            # ← E2E with JWT authentication
     ↓
 test-e2e-load.ps1            # E2E with load
     ↓
@@ -123,11 +129,62 @@ REM Quick health check
 # API Gateway testing
 .\scripts\testing\test-gateway.ps1
 
-# Simple E2E test
+# Authentication & Authorization testing
+.\scripts\testing\test-auth.ps1
+
+# Simple E2E test (no auth)
 .\scripts\testing\test-e2e-simple.ps1
+
+# E2E test with JWT authentication
+.\scripts\testing\test-e2e-auth.ps1
 
 # Load testing
 .\scripts\testing\test-load.ps1
+```
+
+### Authentication & Authorization Testing
+
+The project includes comprehensive authentication and authorization testing:
+
+**test-auth.ps1** - Comprehensive security testing:
+- ✓ User registration (public endpoint)
+- ✓ User login and JWT token generation
+- ✓ Authorized access with valid tokens
+- ✓ Unauthorized access without tokens (401 expected)
+- ✓ Invalid token rejection
+- ✓ Malformed authorization headers
+- ✓ Payment authorization tests
+- ✓ Token reusability across concurrent requests
+
+**test-e2e-auth.ps1** - End-to-end authenticated flows:
+- Registers users and obtains JWT tokens
+- Creates bookings with authentication
+- Processes payments with authentication
+- Verifies booking status with authentication
+- Measures authentication overhead
+- Tests concurrent authenticated flows
+
+**test-gateway-full.ps1** - API Gateway with authentication:
+- User registration and login flow
+- JWT token generation and validation
+- Protected endpoint access tests
+- Invalid token rejection
+- Unauthorized access tests
+
+**Usage Examples:**
+
+```powershell
+# Run comprehensive auth tests
+.\scripts\testing\test-auth.ps1
+
+# Run E2E with authentication (10 flows)
+.\scripts\testing\test-e2e-auth.ps1
+
+# Run E2E with custom parameters
+.\scripts\testing\test-e2e-auth.ps1 -NumberOfFlows 50 -ConcurrentFlows 5
+
+# Run load tests with authentication enabled
+.\scripts\testing\test-e2e-load.ps1 -UseAuthentication -NumberOfFlows 100
 ```
 
 ---
@@ -396,13 +453,13 @@ If you have shortcuts or CI/CD pipelines referencing old paths, update them:
 |----------|---------------|-------------------|-------|
 | Infrastructure | 4 | 0 | 4 |
 | Configuration | 2 | 0 | 2 |
-| Testing | 2 | 6 | 8 |
+| Testing | 2 | 8 | 10 |
 | Monitoring | 1 | 1 | 2 |
-| **Total** | **9** | **7** | **16** |
+| **Total** | **9** | **9** | **18** |
 
 ---
 
 **Last Updated:** November 5, 2025  
 **Organization Date:** November 5, 2025  
-**Total Scripts:** 16 (9 .bat + 7 .ps1)  
+**Total Scripts:** 18 (9 .bat + 9 .ps1)  
 **Status:** ✅ Complete
