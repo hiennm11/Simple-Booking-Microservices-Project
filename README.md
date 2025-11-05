@@ -161,44 +161,66 @@ This project simulates a simple **Booking System** with the following services:
 - [x] **Infrastructure services running and healthy**
 - [x] Basic health check endpoints for each service
 
-### Phase 2: Core Services Implementation (Week 3-4)
-- [ ] **UserService:**
-  - Database context and User entity
-  - Register endpoint (POST /api/users/register)
-  - Login endpoint with JWT generation (POST /api/users/login)
-  - Password hashing (bcrypt)
-- [ ] **BookingService:**
-  - Database context and Booking entity
-  - Create booking endpoint (POST /api/bookings)
-  - Get booking by ID (GET /api/bookings/{id})
-  - RabbitMQ publisher setup
-- [ ] **PaymentService:**
-  - MongoDB setup and Payment model
-  - Process payment endpoint (POST /api/payment/pay)
-  - RabbitMQ publisher for PaymentSucceeded event
-  - Mock payment processing logic
+### Phase 2: Core Services Implementation ✅ COMPLETED
+- [x] **UserService:**
+  - [x] Database context and User entity (EF Core + PostgreSQL)
+  - [x] Register endpoint (POST /api/users/register)
+  - [x] Login endpoint with JWT generation (POST /api/users/login)
+  - [x] Password hashing (BCrypt)
+  - [x] Database seeding with test data
+  - [x] EF Core migrations
+- [x] **BookingService:**
+  - [x] Database context and Booking entity (EF Core + PostgreSQL)
+  - [x] Create booking endpoint (POST /api/bookings)
+  - [x] Get booking by ID (GET /api/bookings/{id})
+  - [x] List all bookings endpoint (GET /api/bookings)
+  - [x] RabbitMQ publisher setup with Polly retry logic
+  - [x] EF Core migrations
+- [x] **PaymentService:**
+  - [x] MongoDB setup and Payment model
+  - [x] Process payment endpoint (POST /api/payments)
+  - [x] Get payment by ID (GET /api/payments/{id})
+  - [x] List all payments endpoint (GET /api/payments)
+  - [x] RabbitMQ publisher for PaymentSucceeded event with Polly retry
+  - [x] Mock payment processing logic (auto-success for demo)
 
-### Phase 3: Event-Driven Integration (Week 5)
-- [ ] Implement RabbitMQ consumer in BookingService
-- [ ] Listen for PaymentSucceeded events
-- [ ] Update booking status to CONFIRMED when payment succeeds
-- [ ] Test event flow: Create Booking → Process Payment → Update Booking
-- [ ] Add retry logic with Polly for failed events
+### Phase 3: Event-Driven Integration ✅ COMPLETED
+- [x] Implement RabbitMQ consumer in BookingService
+- [x] Listen for PaymentSucceeded events
+- [x] Update booking status to CONFIRMED when payment succeeds
+- [x] Test event flow: Create Booking → Process Payment → Update Booking
+- [x] **Add retry logic with Polly for failed events**
+- [x] **Event publishing retry** (3 attempts with exponential backoff)
+- [x] **Event consumption retry** (3 internal + 3 requeue = 9 total attempts)
+- [x] **Connection resilience** (10 retry attempts for RabbitMQ connection)
+- [x] **Dead Letter Queue (DLQ)** support for exhausted retries
+- [x] **Correlation ID tracking** across services
 
-### Phase 4: API Gateway & Security (Week 6)
-- [ ] Setup Ocelot/YARP API Gateway
-- [ ] Configure routing rules for all services
-- [ ] Implement JWT authentication middleware
-- [ ] Add rate limiting (optional)
-- [ ] Test all endpoints through gateway
+### Phase 4: API Gateway & Security ✅ COMPLETED
+- [x] Setup YARP API Gateway
+- [x] Configure routing rules for all services
+- [x] Health checks for downstream services
+- [x] Request/response logging
+- [x] CORS policy configuration
+- [x] Environment-specific configuration (dev/prod)
+- [x] Active health monitoring (10-second intervals)
+- [ ] JWT authentication middleware (future enhancement)
+- [ ] Rate limiting (future enhancement)
 
-### Phase 5: Observability & Polish (Week 7+)
-- [ ] Integrate Serilog for structured logging
-- [ ] Add Seq for log aggregation (optional)
-- [ ] Implement global exception handling middleware
-- [ ] Add Swagger/OpenAPI documentation for each service
-- [ ] Create basic integration tests
-- [ ] Document API endpoints with examples
+### Phase 5: Observability & Monitoring ✅ COMPLETED
+- [x] Integrate Serilog for structured logging in all services
+- [x] Add Seq for centralized log aggregation
+- [x] Health check endpoints (/health) for all services
+- [x] Service-specific log enrichment
+- [x] **Comprehensive Seq query library** (29 production-ready queries)
+- [x] **Pre-configured dashboard templates** (6 dashboards)
+- [x] **Alert signals and thresholds** (8 critical alerts)
+- [x] **Retry monitoring and observability**
+- [x] **Correlation ID support** for distributed tracing
+- [x] Complete documentation suite (3,000+ lines)
+- [x] OpenAPI/Swagger documentation for each service
+- [ ] Integration tests (future enhancement)
+- [ ] Global exception handling middleware (future enhancement)
 
 ### Phase 6: Advanced Features (Future)
 - [ ] Implement Outbox Pattern for reliable event publishing
