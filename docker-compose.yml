@@ -137,6 +137,9 @@ services:
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
       ConnectionStrings__DefaultConnection: "Host=${BOOKINGDB_HOST};Port=5432;Database=${BOOKINGDB_NAME};Username=${BOOKINGDB_USER};Password=${BOOKINGDB_PASSWORD}"
+      JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
+      JwtSettings__Issuer: "${JWT_ISSUER}"
+      JwtSettings__Audience: "${JWT_AUDIENCE}"
       RabbitMQ__HostName: "${RABBITMQ_HOST}"
       RabbitMQ__Port: "${RABBITMQ_PORT}"
       RabbitMQ__UserName: "${RABBITMQ_USER}"
@@ -169,6 +172,9 @@ services:
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
       MongoDB__ConnectionString: "mongodb://${PAYMENTDB_USER}:${PAYMENTDB_PASSWORD}@${PAYMENTDB_HOST}:27017/${PAYMENTDB_NAME}?authSource=admin"
+      JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
+      JwtSettings__Issuer: "${JWT_ISSUER}"
+      JwtSettings__Audience: "${JWT_AUDIENCE}"
       RabbitMQ__HostName: "${RABBITMQ_HOST}"
       RabbitMQ__Port: "${RABBITMQ_PORT}"
       RabbitMQ__UserName: "${RABBITMQ_USER}"

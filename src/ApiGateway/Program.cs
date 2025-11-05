@@ -47,13 +47,39 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnAuthenticationFailed = context =>
             {
-                Log.Warning("JWT Authentication failed: {Error}", context.Exception.Message);
+                // Get the actual token from header for debugging
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                var tokenPreview = authHeader.Length > 20 ? authHeader.Substring(0, 20) + "..." : authHeader;
+                
+                Log.Warning("JWT Authentication failed: {Error}. Header preview: '{TokenPreview}'", 
+                    context.Exception.Message, 
+                    tokenPreview);
+                
+                // Log more details for token format issues
+                if (context.Exception.Message.Contains("IDX14102") || context.Exception.Message.Contains("decode"))
+                {
+                    Log.Error("Token decode error. Full exception: {Exception}", context.Exception.ToString());
+                }
+                
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
                 var userId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
                 Log.Information("JWT Token validated for user: {UserId}", userId);
+                return Task.CompletedTask;
+            },
+            OnMessageReceived = context =>
+            {
+                // Log when token is received
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (!string.IsNullOrEmpty(authHeader))
+                {
+                    var parts = authHeader.Split(' ');
+                    Log.Debug("Authorization header received. Scheme: {Scheme}, Token length: {Length}", 
+                        parts.Length > 0 ? parts[0] : "none",
+                        parts.Length > 1 ? parts[1].Length : 0);
+                }
                 return Task.CompletedTask;
             }
         };

@@ -1,5 +1,6 @@
 using BookingService.DTOs;
 using BookingService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BookingService.Controllers;
@@ -9,6 +10,7 @@ namespace BookingService.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // Require authentication for all endpoints
 public class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;

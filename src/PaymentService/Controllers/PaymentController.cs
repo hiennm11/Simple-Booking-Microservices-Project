@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PaymentService.DTOs;
 using PaymentService.Services;
@@ -9,6 +10,7 @@ namespace PaymentService.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // Require authentication for all endpoints
 public class PaymentController : ControllerBase
 {
     private readonly IPaymentService _paymentService;
