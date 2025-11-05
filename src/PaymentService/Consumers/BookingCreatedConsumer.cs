@@ -26,7 +26,7 @@ public class BookingCreatedConsumer : BackgroundService
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResiliencePipeline _connectionPipeline;
     private IConnection? _connection;
-    private IModel? _channel;
+    private IChannel? _channel;
     private const int MAX_REQUEUE_ATTEMPTS = 3;
     private readonly Dictionary<ulong, int> _retryCountByDeliveryTag = new();
 
@@ -119,38 +119,37 @@ public class BookingCreatedConsumer : BackgroundService
                 UserName = _settings.UserName,
                 Password = _settings.Password,
                 VirtualHost = _settings.VirtualHost,
-                DispatchConsumersAsync = true,
                 AutomaticRecoveryEnabled = true, // Enable automatic recovery
                 NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
             };
 
-            _connection = factory.CreateConnection();
+            _connection = factory.CreateConnectionAsync().GetAwaiter().GetResult();
             _logger.LogInformation("BookingCreatedConsumer established connection to RabbitMQ");
         });
 
-        _channel = _connection!.CreateModel();
+        _channel = _connection!.CreateChannelAsync().GetAwaiter().GetResult();
 
         var queueName = _settings.Queues.GetValueOrDefault("BookingCreated", "booking_created");
         
-        _channel.QueueDeclare(
+        _channel.QueueDeclareAsync(
             queue: queueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
-            arguments: null);
+            arguments: null).GetAwaiter().GetResult();
 
-        _channel.BasicQos(0, 1, false);
+        _channel.BasicQosAsync(0, 1, false).GetAwaiter().GetResult();
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.Received += async (model, ea) =>
+        consumer.ReceivedAsync += async (model, ea) =>
         {
             await HandleMessageAsync(ea);
         };
 
-        _channel.BasicConsume(
+        _channel.BasicConsumeAsync(
             queue: queueName,
             autoAck: false,
-            consumer: consumer);
+            consumer: consumer).GetAwaiter().GetResult();
 
         _logger.LogInformation("BookingCreatedConsumer is listening to queue: {QueueName}", queueName);
     }
@@ -171,7 +170,7 @@ public class BookingCreatedConsumer : BackgroundService
             {
                 _logger.LogWarning("Invalid BookingCreated event format. Rejecting message without requeue.");
                 // Permanent failure - invalid message format
-                _channel!.BasicNack(deliveryTag, false, requeue: false);
+                await _channel!.BasicNackAsync(deliveryTag, false, requeue: false);
                 return;
             }
 
@@ -182,7 +181,7 @@ public class BookingCreatedConsumer : BackgroundService
             }, CancellationToken.None);
 
             // Success - acknowledge and clean up retry count
-            _channel!.BasicAck(deliveryTag, false);
+            await _channel!.BasicAckAsync(deliveryTag, false);
             _retryCountByDeliveryTag.Remove(deliveryTag);
             
             _logger.LogInformation("BookingCreated event processed successfully for BookingId: {BookingId}", 
@@ -210,7 +209,7 @@ public class BookingCreatedConsumer : BackgroundService
                     MAX_REQUEUE_ATTEMPTS,
                     bookingId);
                 
-                _channel!.BasicNack(deliveryTag, false, requeue: false);
+                await _channel!.BasicNackAsync(deliveryTag, false, requeue: false);
                 _retryCountByDeliveryTag.Remove(deliveryTag);
             }
             else
@@ -227,7 +226,7 @@ public class BookingCreatedConsumer : BackgroundService
                 var delayMs = (int)(Math.Pow(2, currentRetryCount) * 1000);
                 await Task.Delay(delayMs);
                 
-                _channel!.BasicNack(deliveryTag, false, requeue: true);
+                await _channel!.BasicNackAsync(deliveryTag, false, requeue: true);
             }
         }
     }
@@ -263,15 +262,22 @@ public class BookingCreatedConsumer : BackgroundService
         }
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("BookingCreatedConsumer is stopping");
         
-        _channel?.Close();
-        _channel?.Dispose();
-        _connection?.Close();
-        _connection?.Dispose();
+        if (_channel != null)
+        {
+            await _channel.CloseAsync();
+            await _channel.DisposeAsync();
+        }
+        
+        if (_connection != null)
+        {
+            await _connection.CloseAsync();
+            await _connection.DisposeAsync();
+        }
 
-        return base.StopAsync(cancellationToken);
+        await base.StopAsync(cancellationToken);
     }
 }
