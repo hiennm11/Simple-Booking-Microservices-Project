@@ -1,0 +1,234 @@
+{
+  "format": "seq-queries-reference",
+  "version": "2025.2",
+  "note": "This file contains query definitions in simplified format. Use as reference for manual creation in Seq.",
+  "queries": [
+    {
+      "name": "Total Retry Attempts (Last Hour)",
+      "description": "Count of all retry attempts across all services",
+      "measurements": [{"Value": "count(*)", "Label": "Retries"}],
+      "where": "@Message like '%retry%' ci and @Message like '%Attempt%' ci",
+      "groupBy": [],
+      "chartType": "Value",
+      "category": "Retry Overview"
+    },
+    {
+      "name": "Retry Attempts by Service",
+      "description": "Bar chart showing retry count per service",
+      "measurements": [{"Value": "count(*)", "Label": "count"}],
+      "where": "@Message like '%retry%' ci and @Message like '%Attempt%' ci",
+      "groupBy": ["Service"],
+      "orderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+      "chartType": "Bar",
+      "category": "Retry Overview"
+    },
+    {
+      "name": "Retry Rate Over Time",
+      "description": "Time series of retry attempts",
+      "measurements": [{"Value": "count(*)", "Label": "Retries"}],
+      "where": "@Message like '%retry%' ci",
+      "groupBy": [],
+      "chartType": "Line",
+      "displayOptions": {
+        "LineFillToZeroY": true,
+        "LineShowMarkers": false
+      },
+      "category": "Retry Overview"
+    },
+    {
+      "name": "Failed Operations (After All Retries)",
+      "description": "Operations that failed after exhausting all retries",
+      "measurements": [{"Value": "count(*)", "Label": "Failed"}],
+      "where": "(@Message like '%failed after%retries%' ci or @Message like '%Moving to DLQ%' ci)",
+      "groupBy": [],
+      "chartType": "Bar",
+      "displayOptions": {
+        "Palette": "Reds",
+        "BarOverlaySum": true
+      },
+      "category": "Retry Overview"
+    },
+    {
+      "name": "System Health Score",
+      "description": "Overall system health percentage (100% = no errors)",
+      "measurements": [{"Value": "100 - (count(case when @Level in ['Error', 'Fatal'] then 1 end) * 100.0 / count(*))", "Label": "Health %"}],
+      "where": null,
+      "groupBy": [],
+      "chartType": "Value",
+      "displayOptions": {
+        "Palette": "Greens"
+      },
+      "category": "System Health"
+    },
+    {
+      "name": "Event Count by Level",
+      "description": "Distribution of log levels",
+      "measurements": [{"Value": "count(*)", "Label": "count"}],
+      "where": null,
+      "groupBy": ["@Level"],
+      "chartType": "Pie",
+      "category": "System Health"
+    },
+    {
+      "name": "Errors and Exceptions",
+      "description": "Count of errors and exceptions over time",
+      "measurements": [{"Value": "count(*)", "Label": "count"}],
+      "where": "@Exception is not null or @Level in ['Error', 'Fatal'] ci",
+      "groupBy": [],
+      "chartType": "Bar",
+      "displayOptions": {
+        "Palette": "Reds",
+        "BarOverlaySum": true
+      },
+      "category": "System Health"
+    },
+    {
+      "name": "Service Activity Summary",
+      "description": "Activity metrics per service with multiple measurements",
+      "measurements": [
+        {"Value": "count(*)", "Label": "Total"},
+        {"Value": "count(case when @Level = 'Error' then 1 end)", "Label": "Errors"},
+        {"Value": "count(case when @Message like '%retry%' ci then 1 end)", "Label": "Retries"}
+      ],
+      "where": null,
+      "groupBy": ["Service"],
+      "orderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+      "chartType": "Bar",
+      "category": "System Health"
+    },
+    {
+      "name": "Publishing Success Rate",
+      "description": "Percentage of successful event publications",
+      "measurements": [{"Value": "count(case when @Message like '%event published%' ci then 1 end) * 100.0 / count(*)", "Label": "Success %"}],
+      "where": "(@Message like '%event published%' ci or @Message like '%Failed to publish%' ci)",
+      "groupBy": [],
+      "chartType": "Value",
+      "displayOptions": {
+        "Palette": "Greens"
+      },
+      "category": "Event Publishing"
+    },
+    {
+      "name": "Publishing Retries by Service",
+      "description": "Event publishing retry attempts per service",
+      "measurements": [{"Value": "count(*)", "Label": "Retries"}],
+      "where": "@Message like '%Publishing%retry%' ci",
+      "groupBy": ["Service"],
+      "orderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+      "chartType": "Bar",
+      "category": "Event Publishing"
+    },
+    {
+      "name": "Failed Publishing Events",
+      "description": "Failed event publishing attempts over time",
+      "measurements": [{"Value": "count(*)", "Label": "Failed"}],
+      "where": "@Message like '%Failed to publish%' ci",
+      "groupBy": [],
+      "chartType": "Line",
+      "displayOptions": {
+        "LineFillToZeroY": true,
+        "Palette": "Reds"
+      },
+      "category": "Event Publishing"
+    },
+    {
+      "name": "RabbitMQ Connection Retries",
+      "description": "RabbitMQ connection retry attempts by service",
+      "measurements": [{"Value": "count(*)", "Label": "Retries"}],
+      "where": "@Message like '%RabbitMQ connection retry%' ci",
+      "groupBy": ["Service"],
+      "orderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+      "chartType": "Bar",
+      "displayOptions": {
+        "Palette": "Reds"
+      },
+      "category": "RabbitMQ"
+    },
+    {
+      "name": "RabbitMQ Connection Timeline",
+      "description": "Connection events over time",
+      "measurements": [{"Value": "count(*)", "Label": "Events"}],
+      "where": "@Message like '%RabbitMQ connection%' ci",
+      "groupBy": [],
+      "chartType": "Line",
+      "displayOptions": {
+        "LineFillToZeroY": true
+      },
+      "category": "RabbitMQ"
+    },
+    {
+      "name": "Database Query Retries",
+      "description": "Database retry attempts by service",
+      "measurements": [{"Value": "count(*)", "Label": "Retries"}],
+      "where": "@Message like '%database%retry%' ci or @Message like '%DB connection retry%' ci",
+      "groupBy": ["Service"],
+      "orderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+      "chartType": "Bar",
+      "category": "Database"
+    },
+    {
+      "name": "HTTP Call Retries",
+      "description": "HTTP retry attempts by service",
+      "measurements": [{"Value": "count(*)", "Label": "Retries"}],
+      "where": "@Message like '%HTTP%retry%' ci or @Message like '%HttpClient retry%' ci",
+      "groupBy": ["Service"],
+      "orderBy": [{"Column": "count(*)", "Direction": "Desc"}],
+      "chartType": "Bar",
+      "category": "HTTP Calls"
+    },
+    {
+      "name": "Recent Error Messages",
+      "description": "Last 50 error messages with details",
+      "measurements": [
+        {"Value": "@Timestamp", "Label": "Time"},
+        {"Value": "Service", "Label": "Service"},
+        {"Value": "@Message", "Label": "Message"},
+        {"Value": "@Exception", "Label": "Exception"}
+      ],
+      "where": "@Level in ['Error', 'Fatal'] ci",
+      "groupBy": [],
+      "orderBy": [{"Column": "@Timestamp", "Direction": "Desc"}],
+      "limit": 50,
+      "chartType": "Table",
+      "category": "Troubleshooting"
+    },
+    {
+      "name": "DLQ Messages",
+      "description": "Messages moved to Dead Letter Queue",
+      "measurements": [
+        {"Value": "@Timestamp", "Label": "Time"},
+        {"Value": "Service", "Label": "Service"},
+        {"Value": "@Message", "Label": "Message"}
+      ],
+      "where": "@Message like '%Moving to DLQ%' ci or @Message like '%Dead Letter%' ci",
+      "groupBy": [],
+      "orderBy": [{"Column": "@Timestamp", "Direction": "Desc"}],
+      "limit": 100,
+      "chartType": "Table",
+      "category": "Troubleshooting"
+    }
+  ],
+  "howToUse": {
+    "title": "How to Create Queries in Seq 2025.2",
+    "steps": [
+      "1. Go to Events page in Seq (http://localhost:5341)",
+      "2. Click 'SQL' button (top-right of event list)",
+      "3. Copy the query fields from this JSON:",
+      "   - Measurements: Click '+' in SELECT section, enter Value and Label",
+      "   - Where: Enter in WHERE field (or leave empty if null)",
+      "   - GroupBy: Click '+' in GROUP BY section, enter field names",
+      "   - OrderBy: Click in ORDER BY section, select column and direction",
+      "   - Limit: Enter in LIMIT field if specified",
+      "4. Click 'Run' to test the query",
+      "5. Click 'Save' to save as a named query",
+      "6. Add to dashboard: Dashboards > Edit > Add chart > Select your saved query"
+    ],
+    "chartTypeMapping": {
+      "Value": "Single number metric (good for totals, percentages)",
+      "Line": "Time series chart (good for trends over time)",
+      "Bar": "Bar chart (good for comparing values across groups)",
+      "Pie": "Pie chart (good for showing distribution)",
+      "Table": "Table view (good for detailed listings)"
+    }
+  }
+}

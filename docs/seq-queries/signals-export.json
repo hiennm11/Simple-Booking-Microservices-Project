@@ -1,0 +1,135 @@
+{
+  "signals": [
+    {
+      "title": "High Retry Rate",
+      "description": "Alerts when any service has more than 20 retry attempts in 5 minutes",
+      "expression": "SELECT Service, COUNT(*) as RetryCount FROM stream WHERE @Message LIKE '%retry%' AND @Timestamp > Now() - 5m GROUP BY Service HAVING COUNT(*) > 20",
+      "grouping": "Service",
+      "suppressionMinutes": 10,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email",
+        "Slack"
+      ],
+      "priority": "Warning"
+    },
+    {
+      "title": "Retry Exhaustion Detected",
+      "description": "Critical alert when operations fail after all retry attempts",
+      "expression": "SELECT @Timestamp, Service, @Message FROM stream WHERE (@Message LIKE '%failed after%retries%' OR @Message LIKE '%Moving to DLQ%' OR @Message LIKE '%Rejecting message%') AND @Timestamp > Now() - 1m",
+      "suppressionMinutes": 5,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email",
+        "Slack",
+        "PagerDuty"
+      ],
+      "priority": "Error"
+    },
+    {
+      "title": "RabbitMQ Connection Issues",
+      "description": "RabbitMQ is unreachable or connection failing",
+      "expression": "SELECT Service, COUNT(*) as ConnectionRetries FROM stream WHERE @Message LIKE '%RabbitMQ connection retry%' AND @Timestamp > Now() - 2m GROUP BY Service HAVING COUNT(*) >= 3",
+      "grouping": "Service",
+      "suppressionMinutes": 15,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email",
+        "Slack"
+      ],
+      "priority": "Error"
+    },
+    {
+      "title": "High Error Rate",
+      "description": "System error rate exceeds 5% in 5 minutes",
+      "expression": "SELECT CAST((CAST(COUNT(CASE WHEN @Level = 'Error' OR @Level = 'Fatal' THEN 1 END) as FLOAT) / NULLIF(COUNT(*), 0)) * 100 as DECIMAL(5,2)) as ErrorPercentage FROM stream WHERE @Timestamp > Now() - 5m HAVING CAST((CAST(COUNT(CASE WHEN @Level = 'Error' OR @Level = 'Fatal' THEN 1 END) as FLOAT) / NULLIF(COUNT(*), 0)) * 100 as DECIMAL(5,2)) > 5.0",
+      "suppressionMinutes": 10,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email",
+        "Slack"
+      ],
+      "priority": "Warning"
+    },
+    {
+      "title": "Event Publishing Failure",
+      "description": "Critical - events not being published after retries",
+      "expression": "SELECT @Timestamp, Service, PaymentId, BookingId, @Message FROM stream WHERE @Message LIKE '%Failed to publish%event after retries%' AND @Timestamp > Now() - 1m",
+      "suppressionMinutes": 5,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email",
+        "PagerDuty"
+      ],
+      "priority": "Error"
+    },
+    {
+      "title": "Dead Letter Queue Activity",
+      "description": "Messages failing all retry attempts",
+      "expression": "SELECT @Timestamp, Service, BookingId, @Message FROM stream WHERE @Message LIKE '%Rejecting message for BookingId%' AND @Timestamp > Now() - 5m",
+      "suppressionMinutes": 30,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email"
+      ],
+      "priority": "Warning"
+    },
+    {
+      "title": "Service Startup Delayed",
+      "description": "Service having trouble starting (RabbitMQ not ready)",
+      "expression": "SELECT Service, COUNT(*) as StartupRetries FROM stream WHERE @Message LIKE '%connection retry%' AND @Message LIKE '%Waiting for RabbitMQ to become available%' AND @Timestamp > Now() - 3m GROUP BY Service HAVING COUNT(*) > 5",
+      "grouping": "Service",
+      "suppressionMinutes": 20,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email"
+      ],
+      "priority": "Warning"
+    },
+    {
+      "title": "Database Connection Issues",
+      "description": "Database operations requiring excessive retries",
+      "expression": "SELECT Service, COUNT(*) as DbRetries FROM stream WHERE @Message LIKE '%Database operation retry%' AND @Timestamp > Now() - 5m GROUP BY Service HAVING COUNT(*) > 10",
+      "grouping": "Service",
+      "suppressionMinutes": 15,
+      "isProtected": false,
+      "isDisabled": false,
+      "notificationApps": [
+        "Email",
+        "Slack"
+      ],
+      "priority": "Warning"
+    }
+  ],
+  "metadata": {
+    "exportDate": "2025-11-05",
+    "version": "1.0",
+    "project": "Simple-Booking-Microservices-Project",
+    "phase": "Phase 5 - Observability",
+    "seqVersion": "2025.2",
+    "instructions": {
+      "import": [
+        "Note: Seq 2025.2 may not support direct JSON import of signals",
+        "Manual creation steps:",
+        "1. Go to Workspace > Signals tab",
+        "2. Click 'Create signal' for each signal below",
+        "3. Copy the 'expression' value into 'Signal expression' field",
+        "4. Set title, description, and suppression from the JSON",
+        "5. Add actions for notification apps listed",
+        "6. Save each signal"
+      ],
+      "prerequisites": [
+        "Install notification apps first: Profile icon > Apps",
+        "Recommended: Seq.App.EmailPlus, Seq.App.Slack",
+        "Configure each app with your credentials before creating signals"
+      ]
+    }
+  }
+}
