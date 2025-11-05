@@ -4,6 +4,9 @@ using PaymentService.EventBus;
 using PaymentService.Services;
 using PaymentService.Consumers;
 using Shared.EventBus;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +28,45 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
+// Add JWT Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? "YourDefaultSecretKeyForDevelopment123!";
+var issuer = jwtSettings["Issuer"] ?? "UserService";
+var audience = jwtSettings["Audience"] ?? "BookingSystem";
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = issuer,
+            ValidAudience = audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+            ClockSkew = TimeSpan.Zero
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Log.Warning("JWT Authentication failed in PaymentService: {Error}", context.Exception.Message);
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var userId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                Log.Information("JWT Token validated in PaymentService for user: {UserId}", userId);
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 // Configure MongoDB
 builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDB"));
 builder.Services.AddSingleton<MongoDbContext>();
@@ -42,8 +84,8 @@ builder.Services.AddSingleton<IResiliencePipelineService, ResiliencePipelineServ
 builder.Services.AddScoped<IPaymentService, PaymentServiceImpl>();
 
 // Register Background Services (Consumers)
-// Uncomment the line below to enable automatic payment processing when bookings are created
-// builder.Services.AddHostedService<BookingCreatedConsumer>();
+// Note: BookingCreatedConsumer is available but not enabled by default
+// Enable it to automatically process payments when bookings are created
 
 // Add health checks with MongoDB database check (use MongoDB:ConnectionString)
 var mongoConn = builder.Configuration["MongoDB:ConnectionString"];
@@ -73,6 +115,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Enable Authentication & Authorization
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

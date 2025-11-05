@@ -204,7 +204,12 @@ This project simulates a simple **Booking System** with the following services:
 - [x] CORS policy configuration
 - [x] Environment-specific configuration (dev/prod)
 - [x] Active health monitoring (10-second intervals)
-- [ ] JWT authentication middleware (future enhancement)
+- [x] JWT authentication middleware
+  - [x] API Gateway JWT validation
+  - [x] BookingService JWT authentication
+  - [x] PaymentService JWT authentication
+  - [x] Protected endpoints with [Authorize] attributes
+  - [x] User claims forwarding to downstream services
 - [ ] Rate limiting (future enhancement)
 
 ### Phase 5: Observability & Monitoring ✅ COMPLETED
@@ -457,6 +462,9 @@ BookingSystem/
 - JWT tokens expire in 60 minutes
 - Passwords hashed with bcrypt (cost factor: 10)
 - HTTPS enforced on API Gateway
+- JWT Bearer authentication on all protected endpoints
+- API Gateway validates JWT tokens and forwards user claims
+- BookingService and PaymentService require authentication
 - Input validation on all endpoints
 - SQL injection protection via EF Core parameterization
 
