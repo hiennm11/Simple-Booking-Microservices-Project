@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Polly;
 using Polly.Retry;
 using System.Net.Sockets;
+using System.Threading.Tasks;
 
 namespace BookingService.Consumers;
 
@@ -26,7 +27,7 @@ public class PaymentSucceededConsumer : BackgroundService
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResiliencePipeline _connectionPipeline;
     private IConnection? _connection;
-    private IModel? _channel;
+    private IChannel? _channel;
     private int _retryCount = 0;
     private const int MAX_REQUEUE_ATTEMPTS = 3;
 
@@ -38,7 +39,7 @@ public class PaymentSucceededConsumer : BackgroundService
         _serviceProvider = serviceProvider;
         _settings = settings.Value;
         _logger = logger;
-        
+
         // Create inline resilience pipeline for message processing
         _resiliencePipeline = new ResiliencePipelineBuilder()
             .AddRetry(new RetryStrategyOptions
@@ -93,8 +94,8 @@ public class PaymentSucceededConsumer : BackgroundService
 
         try
         {
-            InitializeRabbitMQ();
-            
+            await InitializeRabbitMQ();
+
             // Keep the consumer running
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -107,10 +108,10 @@ public class PaymentSucceededConsumer : BackgroundService
         }
     }
 
-    private void InitializeRabbitMQ()
+    private async Task InitializeRabbitMQ()
     {
         // Execute connection with retry policy
-        _connectionPipeline.Execute(() =>
+        await _connectionPipeline.Execute(async () =>
         {
             var factory = new ConnectionFactory
             {
@@ -119,35 +120,34 @@ public class PaymentSucceededConsumer : BackgroundService
                 UserName = _settings.UserName,
                 Password = _settings.Password,
                 VirtualHost = _settings.VirtualHost,
-                DispatchConsumersAsync = true,
                 AutomaticRecoveryEnabled = true, // Enable automatic recovery
                 NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
             };
 
-            _connection = factory.CreateConnection();
+            _connection = await factory.CreateConnectionAsync();
             _logger.LogInformation("PaymentSucceededConsumer established connection to RabbitMQ");
         });
 
-        _channel = _connection!.CreateModel();
+        _channel = await _connection!.CreateChannelAsync();
 
         var queueName = _settings.Queues.GetValueOrDefault("PaymentSucceeded", "payment_succeeded");
-        
-        _channel.QueueDeclare(
+
+        await _channel.QueueDeclareAsync(
             queue: queueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
             arguments: null);
 
-        _channel.BasicQos(0, 1, false);
+        await _channel.BasicQosAsync(0, 1, false);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.Received += async (model, ea) =>
+        consumer.ReceivedAsync += async (model, ea) =>
         {
             await HandleMessageAsync(ea);
         };
 
-        _channel.BasicConsume(
+        await _channel.BasicConsumeAsync(
             queue: queueName,
             autoAck: false,
             consumer: consumer);
@@ -165,12 +165,12 @@ public class PaymentSucceededConsumer : BackgroundService
             _logger.LogInformation("Received PaymentSucceeded event: {Message}", message);
 
             var paymentEvent = JsonSerializer.Deserialize<PaymentSucceededEvent>(message);
-            
+
             if (paymentEvent?.Data == null)
             {
                 _logger.LogWarning("Invalid PaymentSucceeded event format");
                 // ❌ Permanent failure - don't requeue
-                _channel!.BasicNack(ea.DeliveryTag, false, requeue: false);
+                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
                 return;
             }
 
@@ -181,28 +181,28 @@ public class PaymentSucceededConsumer : BackgroundService
             }, CancellationToken.None);
 
             // ✅ Success - acknowledge
-            _channel!.BasicAck(ea.DeliveryTag, false);
+            await _channel!.BasicAckAsync(ea.DeliveryTag, false);
             _retryCount = 0; // Reset counter
-            
-            _logger.LogInformation("PaymentSucceeded event processed successfully for BookingId: {BookingId}", 
+
+            _logger.LogInformation("PaymentSucceeded event processed successfully for BookingId: {BookingId}",
                 paymentEvent.Data.BookingId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing PaymentSucceeded event: {Message}", message);
-            
+
             _retryCount++;
-            
+
             if (_retryCount >= MAX_REQUEUE_ATTEMPTS)
             {
                 // ❌ Max retries reached - send to dead letter queue or log
                 _logger.LogError(
                     "Message failed after {Attempts} requeue attempts. Moving to DLQ.",
                     MAX_REQUEUE_ATTEMPTS);
-                
-                _channel!.BasicNack(ea.DeliveryTag, false, requeue: false);
+
+                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
                 _retryCount = 0;
-                
+
                 // TODO: Store in dead-letter table for manual investigation
             }
             else
@@ -210,8 +210,8 @@ public class PaymentSucceededConsumer : BackgroundService
                 // ⚠️ Requeue for retry
                 _logger.LogWarning("Requeuing message. Attempt {Attempt}/{Max}",
                     _retryCount, MAX_REQUEUE_ATTEMPTS);
-                
-                _channel!.BasicNack(ea.DeliveryTag, false, requeue: true);
+
+                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: true);
             }
         }
     }
@@ -246,15 +246,22 @@ public class PaymentSucceededConsumer : BackgroundService
         _logger.LogInformation("Booking {BookingId} status updated to CONFIRMED", booking.Id);
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("PaymentSucceededConsumer is stopping");
-        
-        _channel?.Close();
-        _channel?.Dispose();
-        _connection?.Close();
-        _connection?.Dispose();
 
-        return base.StopAsync(cancellationToken);
+        if (_channel != null)
+        {
+            await _channel.CloseAsync();
+            await _channel.DisposeAsync();
+        }
+
+        if (_connection != null)
+        {
+            await _connection.CloseAsync();
+            await _connection.DisposeAsync();
+        }
+
+        await base.StopAsync(cancellationToken);
     }
 }

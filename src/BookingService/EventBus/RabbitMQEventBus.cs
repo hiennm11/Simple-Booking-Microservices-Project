@@ -20,7 +20,7 @@ public class RabbitMQEventBus : IEventBus, IDisposable
     private readonly ILogger<RabbitMQEventBus> _logger;
     private readonly ResiliencePipeline _connectionPipeline;
     private IConnection? _connection;
-    private IModel? _channel;
+    private IChannel? _channel;
     private readonly object _lock = new();
     private bool _disposed;
 
@@ -89,7 +89,7 @@ public class RabbitMQEventBus : IEventBus, IDisposable
                         NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
                     };
 
-                    _connection = factory.CreateConnection();
+                    _connection = factory.CreateConnectionAsync().GetAwaiter().GetResult();
                     _logger.LogInformation("RabbitMQ connection established to {HostName}:{Port}", 
                         _settings.HostName, _settings.Port);
                 });
@@ -97,13 +97,13 @@ public class RabbitMQEventBus : IEventBus, IDisposable
 
             if (_channel == null || !_channel.IsOpen)
             {
-                _channel = _connection!.CreateModel();
+                _channel = _connection!.CreateChannelAsync().GetAwaiter().GetResult();
                 _logger.LogInformation("RabbitMQ channel created");
             }
         }
     }
 
-    public Task PublishAsync<T>(T @event, string queueName, CancellationToken cancellationToken = default) where T : class
+    public async Task PublishAsync<T>(T @event, string queueName, CancellationToken cancellationToken = default) where T : class
     {
         EnsureConnection();
 
@@ -115,7 +115,7 @@ public class RabbitMQEventBus : IEventBus, IDisposable
         try
         {
             // Declare queue (idempotent operation)
-            _channel.QueueDeclare(
+            await _channel.QueueDeclareAsync(
                 queue: queueName,
                 durable: true,
                 exclusive: false,
@@ -125,21 +125,22 @@ public class RabbitMQEventBus : IEventBus, IDisposable
             var message = JsonSerializer.Serialize(@event);
             var body = Encoding.UTF8.GetBytes(message);
 
-            var properties = _channel.CreateBasicProperties();
-            properties.Persistent = true;
-            properties.ContentType = "application/json";
-            properties.DeliveryMode = 2; // Persistent
+            var properties = new BasicProperties
+            {
+                Persistent = true,
+                ContentType = "application/json",
+                DeliveryMode = DeliveryModes.Persistent
+            };
 
-            _channel.BasicPublish(
+            await _channel.BasicPublishAsync(
                 exchange: string.Empty,
                 routingKey: queueName,
+                mandatory: false,
                 basicProperties: properties,
                 body: body);
 
             _logger.LogInformation("Event published to queue {QueueName}: {EventType}", 
                 queueName, typeof(T).Name);
-            
-            return Task.CompletedTask;
         }
         catch (Exception ex)
         {
@@ -153,10 +154,18 @@ public class RabbitMQEventBus : IEventBus, IDisposable
         if (_disposed)
             return;
 
-        _channel?.Close();
-        _channel?.Dispose();
-        _connection?.Close();
-        _connection?.Dispose();
+        if (_channel != null)
+        {
+            _channel.CloseAsync().GetAwaiter().GetResult();
+            _channel.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        
+        if (_connection != null)
+        {
+            _connection.CloseAsync().GetAwaiter().GetResult();
+            _connection.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        
         _disposed = true;
         
         _logger.LogInformation("RabbitMQ connection disposed");
