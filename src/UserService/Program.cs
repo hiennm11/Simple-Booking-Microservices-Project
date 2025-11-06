@@ -3,6 +3,7 @@ using Serilog;
 using UserService.Controllers;
 using UserService.Data;
 using UserService.Services;
+using Shared.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,6 +67,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Add global exception handling
+app.UseGlobalExceptionHandler();
 
 app.UseHttpsRedirection();
 

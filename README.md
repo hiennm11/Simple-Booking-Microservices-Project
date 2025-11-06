@@ -233,8 +233,8 @@ This project simulates a simple **Booking System** with the following services:
 - [x] **Correlation ID support** for distributed tracing
 - [x] Complete documentation suite (3,000+ lines)
 - [x] OpenAPI/Swagger documentation for each service
+- [x] **Global exception handling middleware** across all services
 - [ ] Integration tests (future enhancement)
-- [ ] Global exception handling middleware (future enhancement)
 
 ### Phase 6: Advanced Features (Future)
 - [ ] Implement Outbox Pattern for reliable event publishing

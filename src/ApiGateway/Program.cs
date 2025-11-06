@@ -1,5 +1,6 @@
 using System.Text;
 using ApiGateway.Middleware;
+using Shared.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;

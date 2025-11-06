@@ -5,6 +5,7 @@ using BookingService.Services;
 using BookingService.EventBus;
 using BookingService.Consumers;
 using Shared.EventBus;
+using Shared.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -121,6 +122,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Add global exception handling
+app.UseGlobalExceptionHandler();
 
 app.UseHttpsRedirection();
 
