@@ -210,7 +210,16 @@ This project simulates a simple **Booking System** with the following services:
   - [x] PaymentService JWT authentication
   - [x] Protected endpoints with [Authorize] attributes
   - [x] User claims forwarding to downstream services
-- [ ] Rate limiting (future enhancement)
+- [x] **Rate limiting with multiple policies**
+  - [x] Global rate limiting (100 requests/min per IP)
+  - [x] Auth rate limiting (5 attempts/5min - brute force protection)
+  - [x] Booking rate limiting (Token Bucket: 50 capacity, +10/min)
+  - [x] Payment rate limiting (Concurrency: max 10 concurrent)
+  - [x] Read operation limits (200 requests/min per user)
+  - [x] Premium tier support (500 requests/min)
+  - [x] Configurable via appsettings.json
+  - [x] Comprehensive logging and monitoring
+  - [x] Informative 429 responses with retry guidance
 
 ### Phase 5: Observability & Monitoring ✅ COMPLETED
 - [x] Integrate Serilog for structured logging in all services

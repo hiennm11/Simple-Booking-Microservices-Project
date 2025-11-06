@@ -94,6 +94,9 @@ builder.Services.AddAuthorization(options =>
     });
 });
 
+// Add Rate Limiting with custom policies
+builder.Services.AddCustomRateLimiting(builder.Configuration);
+
 // Add CORS policy
 builder.Services.AddCors(options =>
 {
@@ -125,6 +128,12 @@ app.UseGlobalExceptionHandler();
 
 // Enable CORS
 app.UseCors();
+
+// Enable Rate Limiting (MUST be after routing and before authentication)
+app.UseRateLimiter();
+
+// Add rate limit headers to responses
+app.UseRateLimitHeaders();
 
 // Enable Authentication & Authorization (MUST be before MapReverseProxy)
 app.UseAuthentication();
