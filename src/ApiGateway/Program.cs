@@ -4,8 +4,19 @@ using Shared.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel for high concurrency (Gateway handles all traffic)
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 1000; // Higher for gateway
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 1000;
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+});
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()

@@ -106,7 +106,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
-      ConnectionStrings__DefaultConnection: "Host=${USERDB_HOST};Port=5432;Database=${USERDB_NAME};Username=${USERDB_USER};Password=${USERDB_PASSWORD}"
+      ConnectionStrings__DefaultConnection: "Host=${USERDB_HOST};Port=5432;Database=${USERDB_NAME};Username=${USERDB_USER};Password=${USERDB_PASSWORD};Maximum Pool Size=200;Minimum Pool Size=10;Connection Lifetime=300"
       JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
       JwtSettings__Issuer: "${JWT_ISSUER}"
       JwtSettings__Audience: "${JWT_AUDIENCE}"
@@ -136,7 +136,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
-      ConnectionStrings__DefaultConnection: "Host=${BOOKINGDB_HOST};Port=5432;Database=${BOOKINGDB_NAME};Username=${BOOKINGDB_USER};Password=${BOOKINGDB_PASSWORD}"
+      ConnectionStrings__DefaultConnection: "Host=${BOOKINGDB_HOST};Port=5432;Database=${BOOKINGDB_NAME};Username=${BOOKINGDB_USER};Password=${BOOKINGDB_PASSWORD};Maximum Pool Size=200;Minimum Pool Size=10;Connection Lifetime=300"
       JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
       JwtSettings__Issuer: "${JWT_ISSUER}"
       JwtSettings__Audience: "${JWT_AUDIENCE}"
@@ -171,7 +171,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       DOTNET_RUNNING_IN_CONTAINER: true
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
-      MongoDB__ConnectionString: "mongodb://${PAYMENTDB_USER}:${PAYMENTDB_PASSWORD}@${PAYMENTDB_HOST}:27017/${PAYMENTDB_NAME}?authSource=admin"
+      MongoDB__ConnectionString: "mongodb://${PAYMENTDB_USER}:${PAYMENTDB_PASSWORD}@${PAYMENTDB_HOST}:27017/${PAYMENTDB_NAME}?authSource=admin&maxPoolSize=200&minPoolSize=10"
       JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
       JwtSettings__Issuer: "${JWT_ISSUER}"
       JwtSettings__Audience: "${JWT_AUDIENCE}"

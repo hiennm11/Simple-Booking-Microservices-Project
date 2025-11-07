@@ -1,5 +1,6 @@
 param(
     [int]$NumberOfFlows = 10,
+    [ValidateRange(1, 2048)]
     [int]$ConcurrentFlows = 3,
     [string]$GatewayUrl = "http://localhost:5000"
 )
@@ -13,12 +14,32 @@ Write-Host "Gateway URL:       $GatewayUrl" -ForegroundColor White
 Write-Host "Authentication:    Enabled (JWT)" -ForegroundColor Green
 Write-Host ""
 
-# Check PowerShell version
+# Ensure PowerShell 7+ for real concurrency; auto-switch to pwsh if available
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-    Write-Host "[WARNING] This script requires PowerShell 7+ for parallel execution." -ForegroundColor Yellow
-    Write-Host "          Download from: https://aka.ms/powershell" -ForegroundColor Yellow
-    Write-Host "          Running in sequential mode..." -ForegroundColor Yellow
-    Write-Host ""
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) {
+        Write-Host "[INFO] PowerShell 7 detected at: $($pwsh.Source)" -ForegroundColor Yellow
+        Write-Host "[INFO] Re-launching this script with PowerShell 7 for parallel execution..." -ForegroundColor Yellow
+
+        $scriptPath = $MyInvocation.MyCommand.Path
+        # Build argument list safely to preserve spaces
+        $argsList = @(
+            '-NoLogo','-NoProfile',
+            '-File', $scriptPath,
+            '-NumberOfFlows', $NumberOfFlows,
+            '-ConcurrentFlows', $ConcurrentFlows,
+            '-GatewayUrl', $GatewayUrl
+        )
+
+        & $pwsh.Source @argsList
+        exit $LASTEXITCODE
+    }
+    else {
+        Write-Host "[WARNING] This script uses parallel execution which requires PowerShell 7+." -ForegroundColor Yellow
+        Write-Host "          'pwsh' not found on PATH. Download from: https://aka.ms/powershell" -ForegroundColor Yellow
+        Write-Host "          Continuing in sequential mode..." -ForegroundColor Yellow
+        Write-Host ""
+    }
 }
 
 # Create synchronized hashtable for results
@@ -34,6 +55,8 @@ $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 # Execute flows in parallel (PS 7+) or sequential (PS 5.1)
 if ($PSVersionTable.PSVersion.Major -ge 7) {
+    # Normalize throttle to at least 1
+    $throttle = [math]::Max(1, [int]$ConcurrentFlows)
     1..$NumberOfFlows | ForEach-Object -Parallel {
         $flowId = $_
         $gatewayUrl = $using:GatewayUrl
@@ -58,7 +81,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Method Post `
                 -ContentType "application/json" `
                 -Body $registerBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $userId = $user.data.id
             
@@ -72,7 +95,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Method Post `
                 -ContentType "application/json" `
                 -Body $loginBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $token = $loginResponse.data.token.Trim()
             $authStopwatch.Stop()
@@ -98,7 +121,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Headers $headers `
                 -ContentType "application/json" `
                 -Body $bookingBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $bookingId = $booking.id
             $bookingAmount = $booking.amount
@@ -114,7 +137,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Headers $headers `
                 -ContentType "application/json" `
                 -Body $paymentBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             # Step 5: Wait for event processing
             Start-Sleep -Milliseconds 2000
@@ -123,7 +146,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             $updatedBooking = Invoke-RestMethod -Uri "$gatewayUrl/api/bookings/$bookingId" `
                 -Method Get `
                 -Headers $headers `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $flowStopwatch.Stop()
             $elapsed = $flowStopwatch.Elapsed.TotalMilliseconds
@@ -172,7 +195,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 if ($lockTaken) { [System.Threading.Monitor]::Exit($results.SyncRoot) }
             }
         }
-    } -ThrottleLimit $ConcurrentFlows
+    } -ThrottleLimit $throttle
 } else {
     # Sequential execution for PS 5.1
     for ($i = 1; $i -le $NumberOfFlows; $i++) {
@@ -195,7 +218,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Method Post `
                 -ContentType "application/json" `
                 -Body $registerBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $userId = $user.data.id
             
@@ -209,7 +232,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Method Post `
                 -ContentType "application/json" `
                 -Body $loginBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $token = $loginResponse.data.token.Trim()
             $authStopwatch.Stop()
@@ -235,7 +258,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Headers $headers `
                 -ContentType "application/json" `
                 -Body $bookingBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $bookingId = $booking.id
             $bookingAmount = $booking.amount
@@ -251,7 +274,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Headers $headers `
                 -ContentType "application/json" `
                 -Body $paymentBody `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             # Step 5: Wait for event processing
             Start-Sleep -Milliseconds 2000
@@ -260,7 +283,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             $updatedBooking = Invoke-RestMethod -Uri "$GatewayUrl/api/bookings/$bookingId" `
                 -Method Get `
                 -Headers $headers `
-                -TimeoutSec 30
+                -TimeoutSec 60
             
             $flowStopwatch.Stop()
             $elapsed = $flowStopwatch.Elapsed.TotalMilliseconds

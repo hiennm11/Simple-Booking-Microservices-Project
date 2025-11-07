@@ -4,8 +4,19 @@ using UserService.Controllers;
 using UserService.Data;
 using UserService.Services;
 using Shared.Extensions;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel for high concurrency
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 500;
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 500;
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+});
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -26,7 +37,14 @@ builder.Services.AddOpenApi();
 // Add DbContext
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<UserDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.MaxBatchSize(100);
+        npgsqlOptions.CommandTimeout(30);
+    }).EnableSensitiveDataLogging(builder.Environment.IsDevelopment()));
+
+// Configure connection string pool size via environment or appsettings
+// Example: "Host=localhost;Port=5432;Database=userdb;Username=user;Password=pass;Maximum Pool Size=200;Minimum Pool Size=10"
 
 // Add services
 builder.Services.AddScoped<IAuthService, AuthService>();
