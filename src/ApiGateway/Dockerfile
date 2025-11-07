@@ -3,10 +3,12 @@ WORKDIR /src
 
 COPY ["ApiGateway/ApiGateway.csproj", "ApiGateway/"]
 COPY ["ApiGateway/nuget.config", "ApiGateway/"]
+COPY ["Shared/Shared.csproj", "Shared/"]
 
 RUN dotnet restore "ApiGateway/ApiGateway.csproj"
 
 COPY ["ApiGateway/", "ApiGateway/"]
+COPY ["Shared/", "Shared/"]
 
 WORKDIR /src/ApiGateway
 RUN dotnet publish -c Release -o /app/publish

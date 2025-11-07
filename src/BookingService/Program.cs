@@ -5,11 +5,23 @@ using BookingService.Services;
 using BookingService.EventBus;
 using BookingService.Consumers;
 using Shared.EventBus;
+using Shared.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel for high concurrency
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 500;
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 500;
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+});
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -72,7 +84,11 @@ builder.Services.AddAuthorization();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<BookingDbContext>(options =>
 {
-    options.UseNpgsql(connectionString);
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.MaxBatchSize(100);
+        npgsqlOptions.CommandTimeout(30);
+    }).EnableSensitiveDataLogging(builder.Environment.IsDevelopment());
 });
 
 // Configure RabbitMQ settings
@@ -121,6 +137,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Add global exception handling
+app.UseGlobalExceptionHandler();
 
 app.UseHttpsRedirection();
 

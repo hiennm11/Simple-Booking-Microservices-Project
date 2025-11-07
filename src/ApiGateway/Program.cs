@@ -1,10 +1,22 @@
 using System.Text;
 using ApiGateway.Middleware;
+using Shared.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel for high concurrency (Gateway handles all traffic)
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 1000; // Higher for gateway
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 1000;
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+});
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -94,6 +106,9 @@ builder.Services.AddAuthorization(options =>
     });
 });
 
+// Add Rate Limiting with custom policies
+builder.Services.AddCustomRateLimiting(builder.Configuration);
+
 // Add CORS policy
 builder.Services.AddCors(options =>
 {
@@ -125,6 +140,12 @@ app.UseGlobalExceptionHandler();
 
 // Enable CORS
 app.UseCors();
+
+// Enable Rate Limiting (MUST be after routing and before authentication)
+app.UseRateLimiter();
+
+// Add rate limit headers to responses
+app.UseRateLimitHeaders();
 
 // Enable Authentication & Authorization (MUST be before MapReverseProxy)
 app.UseAuthentication();
