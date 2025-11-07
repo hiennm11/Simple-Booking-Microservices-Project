@@ -21,52 +21,47 @@ public interface IBookingService
 }
 
 /// <summary>
-/// Implementation of booking service with database and event bus integration
+/// Implementation of booking service with database and Outbox pattern for reliable event publishing
 /// </summary>
 public class BookingServiceImpl : IBookingService
 {
     private readonly BookingDbContext _dbContext;
-    private readonly IEventBus _eventBus;
+    private readonly IOutboxService _outboxService;
     private readonly ILogger<BookingServiceImpl> _logger;
-    private readonly EventBus.RabbitMQSettings _rabbitMQSettings;
-    private readonly ResiliencePipeline _eventPublishingPipeline;
 
     public BookingServiceImpl(
         BookingDbContext dbContext,
-        IEventBus eventBus,
-        IOptions<EventBus.RabbitMQSettings> rabbitMQSettings,
-        IResiliencePipelineService resiliencePipelineService,
+        IOutboxService outboxService,
         ILogger<BookingServiceImpl> logger)
     {
         _dbContext = dbContext;
-        _eventBus = eventBus;
+        _outboxService = outboxService;
         _logger = logger;
-        _rabbitMQSettings = rabbitMQSettings.Value;
-        _eventPublishingPipeline = resiliencePipelineService.GetEventPublishingPipeline();
     }
 
     public async Task<BookingResponse> CreateBookingAsync(CreateBookingRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Creating booking for user {UserId}, room {RoomId}", request.UserId, request.RoomId);
 
-        var booking = new Booking
-        {
-            Id = Guid.NewGuid(),
-            UserId = request.UserId,
-            RoomId = request.RoomId,
-            Amount = request.Amount,
-            Status = "PENDING",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _dbContext.Bookings.Add(booking);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation("Booking created with ID: {BookingId}", booking.Id);
-
-        // Publish BookingCreated event
+        // Start a database transaction to ensure atomicity
+        using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        
         try
         {
+            // 1. Create and save the booking
+            var booking = new Booking
+            {
+                Id = Guid.NewGuid(),
+                UserId = request.UserId,
+                RoomId = request.RoomId,
+                Amount = request.Amount,
+                Status = "PENDING",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _dbContext.Bookings.Add(booking);
+            
+            // 2. Create the event
             var bookingCreatedEvent = new BookingCreatedEvent
             {
                 EventId = Guid.NewGuid(),
@@ -82,25 +77,28 @@ public class BookingServiceImpl : IBookingService
                 }
             };
 
-            var queueName = _rabbitMQSettings.Queues.GetValueOrDefault("BookingCreated", "booking_created");
-            
-            // Execute with retry policy using Polly resilience pipeline
-            await _eventPublishingPipeline.ExecuteAsync(async ct =>
-            {
-                await _eventBus.PublishAsync(bookingCreatedEvent, queueName, ct);
-            }, cancellationToken);
+            // 3. Save event to outbox table (in same transaction!)
+            await _outboxService.AddToOutboxAsync(
+                bookingCreatedEvent, 
+                "BookingCreated", 
+                cancellationToken);
 
-            _logger.LogInformation("BookingCreated event published for booking {BookingId}", booking.Id);
+            // 4. Commit transaction - both booking and outbox message are saved atomically
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Booking created with ID: {BookingId} and event saved to outbox", 
+                booking.Id);
+
+            return MapToResponse(booking);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to publish BookingCreated event after retries for booking {BookingId}", booking.Id);
-            // Event is lost after all retry attempts
-            // In production, consider storing in outbox table for later retry or manual intervention
-            // Don't fail the booking creation if event publishing fails
+            _logger.LogError(ex, "Failed to create booking and save event to outbox");
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
-
-        return MapToResponse(booking);
     }
 
     public async Task<BookingResponse?> GetBookingByIdAsync(Guid id, CancellationToken cancellationToken = default)

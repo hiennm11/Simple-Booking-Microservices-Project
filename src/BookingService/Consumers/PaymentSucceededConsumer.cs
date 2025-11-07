@@ -164,7 +164,12 @@ public class PaymentSucceededConsumer : BackgroundService
         {
             _logger.LogInformation("Received PaymentSucceeded event: {Message}", message);
 
-            var paymentEvent = JsonSerializer.Deserialize<PaymentSucceededEvent>(message);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var paymentEvent = JsonSerializer.Deserialize<PaymentSucceededEvent>(message, options);
 
             if (paymentEvent?.Data == null)
             {
@@ -221,6 +226,8 @@ public class PaymentSucceededConsumer : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
 
+        _logger.LogInformation("Processing PaymentSucceeded event for BookingId: {BookingId}", paymentEvent.Data.BookingId);
+
         var booking = await dbContext.Bookings
             .FirstOrDefaultAsync(b => b.Id == paymentEvent.Data.BookingId);
 
@@ -229,6 +236,8 @@ public class PaymentSucceededConsumer : BackgroundService
             _logger.LogWarning("Booking not found with ID: {BookingId}", paymentEvent.Data.BookingId);
             return;
         }
+
+        _logger.LogInformation("Found booking {BookingId} with current status: {Status}", booking.Id, booking.Status);
 
         if (booking.Status == "CONFIRMED")
         {
@@ -240,6 +249,8 @@ public class PaymentSucceededConsumer : BackgroundService
         booking.Status = "CONFIRMED";
         booking.ConfirmedAt = DateTime.UtcNow;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        _logger.LogInformation("Updating booking {BookingId} status to CONFIRMED", booking.Id);
 
         await dbContext.SaveChangesAsync();
 

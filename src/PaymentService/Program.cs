@@ -92,12 +92,18 @@ builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
 // Register Resilience Pipeline Service
 builder.Services.AddSingleton<IResiliencePipelineService, ResiliencePipelineService>();
 
+// Register Outbox Pattern Services
+builder.Services.AddScoped<IOutboxService, OutboxService>();
+
 // Register Services
 builder.Services.AddScoped<IPaymentService, PaymentServiceImpl>();
 
 // Register Background Services (Consumers)
 // Note: BookingCreatedConsumer is available but not enabled by default
 // Enable it to automatically process payments when bookings are created
+
+// Register Outbox Publisher Background Service
+builder.Services.AddHostedService<PaymentService.BackgroundServices.OutboxPublisherService>();
 
 // Add health checks with MongoDB database check (use MongoDB:ConnectionString)
 var mongoConn = builder.Configuration["MongoDB:ConnectionString"];

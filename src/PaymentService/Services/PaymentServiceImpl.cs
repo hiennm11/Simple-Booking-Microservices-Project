@@ -11,27 +11,21 @@ using Polly;
 namespace PaymentService.Services;
 
 /// <summary>
-/// Payment service implementation
+/// Payment service implementation with Outbox pattern for reliable event publishing
 /// </summary>
 public class PaymentServiceImpl : IPaymentService
 {
     private readonly MongoDbContext _dbContext;
-    private readonly IEventBus _eventBus;
-    private readonly RabbitMQSettings _rabbitMQSettings;
-    private readonly ResiliencePipeline _eventPublishingPipeline;
+    private readonly IOutboxService _outboxService;
     private readonly ILogger<PaymentServiceImpl> _logger;
 
     public PaymentServiceImpl(
         MongoDbContext dbContext,
-        IEventBus eventBus,
-        IOptions<RabbitMQSettings> rabbitMQSettings,
-        IResiliencePipelineService resiliencePipelineService,
+        IOutboxService outboxService,
         ILogger<PaymentServiceImpl> logger)
     {
         _dbContext = dbContext;
-        _eventBus = eventBus;
-        _rabbitMQSettings = rabbitMQSettings.Value;
-        _eventPublishingPipeline = resiliencePipelineService.GetEventPublishingPipeline();
+        _outboxService = outboxService;
         _logger = logger;
     }
 
@@ -87,8 +81,42 @@ public class PaymentServiceImpl : IPaymentService
 
             _logger.LogInformation("Payment processed successfully: {PaymentId}", payment.Id);
 
-            // Publish PaymentSucceeded event
-            await PublishPaymentSucceededEventAsync(payment);
+            // Save PaymentSucceeded event to outbox
+            var paymentEvent = new PaymentSucceededEvent
+            {
+                EventId = Guid.NewGuid(),
+                EventName = "PaymentSucceeded",
+                Timestamp = DateTime.UtcNow,
+                Data = new PaymentSucceededData
+                {
+                    PaymentId = payment.Id,
+                    BookingId = payment.BookingId,
+                    Amount = payment.Amount,
+                    Status = "SUCCESS"
+                }
+            };
+
+            try
+            {
+                // Save event to outbox for guaranteed delivery
+                await _outboxService.AddToOutboxAsync(
+                    paymentEvent,
+                    "PaymentSucceeded");
+
+                _logger.LogInformation(
+                    "PaymentSucceeded event saved to outbox for PaymentId: {PaymentId}, BookingId: {BookingId}",
+                    payment.Id,
+                    payment.BookingId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to save PaymentSucceeded event to outbox for PaymentId: {PaymentId}",
+                    payment.Id);
+                // Note: In MongoDB without transactions, this could result in payment without event
+                // Consider implementing MongoDB transactions for atomic operations if needed
+            }
         }
         else
         {
@@ -151,47 +179,6 @@ public class PaymentServiceImpl : IPaymentService
         _logger.LogInformation("Payment simulation result: {Result}", isSuccess ? "SUCCESS" : "FAILED");
 
         return isSuccess;
-    }
-
-    /// <summary>
-    /// Publish PaymentSucceeded event to RabbitMQ
-    /// </summary>
-    private async Task PublishPaymentSucceededEventAsync(Payment payment)
-    {
-        var paymentEvent = new PaymentSucceededEvent
-        {
-            EventId = Guid.NewGuid(),
-            EventName = "PaymentSucceeded",
-            Timestamp = DateTime.UtcNow,
-            Data = new PaymentSucceededData
-            {
-                PaymentId = payment.Id,
-                BookingId = payment.BookingId,
-                Amount = payment.Amount,
-                Status = "SUCCESS"
-            }
-        };
-
-        var queueName = _rabbitMQSettings.Queues.GetValueOrDefault("PaymentSucceeded", "payment_succeeded");
-
-        try
-        {
-            // Execute with retry policy using Polly resilience pipeline
-            await _eventPublishingPipeline.ExecuteAsync(async ct =>
-            {
-                await _eventBus.PublishAsync(paymentEvent, queueName, ct);
-            }, CancellationToken.None);
-
-            _logger.LogInformation("PaymentSucceeded event published for PaymentId: {PaymentId}, BookingId: {BookingId}", 
-                payment.Id, payment.BookingId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to publish PaymentSucceeded event after retries for PaymentId: {PaymentId}", payment.Id);
-            // Event is lost after all retry attempts
-            // In production, consider storing in outbox table for later retry or manual intervention
-            throw;
-        }
     }
 
     /// <summary>

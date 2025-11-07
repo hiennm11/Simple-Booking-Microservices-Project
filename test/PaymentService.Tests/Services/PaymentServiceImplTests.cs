@@ -20,10 +20,7 @@ namespace PaymentService.Tests.Services;
 public class PaymentServiceImplTests
 {
     private readonly Mock<MongoDbContext> _dbContextMock;
-    private readonly Mock<IEventBus> _eventBusMock;
-    private readonly Mock<IResiliencePipelineService> _resiliencePipelineServiceMock;
     private readonly Mock<ILogger<PaymentServiceImpl>> _loggerMock;
-    private readonly RabbitMQSettings _rabbitMQSettings;
     private readonly PaymentServiceImpl _sut;
     private readonly Mock<IMongoCollection<Payment>> _paymentsCollectionMock;
 
@@ -35,32 +32,20 @@ public class PaymentServiceImplTests
                 ConnectionString = "mongodb://localhost:27017", 
                 DatabaseName = "paymentdb" 
             }));
-        _eventBusMock = new Mock<IEventBus>();
-        _resiliencePipelineServiceMock = new Mock<IResiliencePipelineService>();
         _loggerMock = new Mock<ILogger<PaymentServiceImpl>>();
-        _rabbitMQSettings = new RabbitMQSettings
-        {
-            Queues = new Dictionary<string, string>
-            {
-                { "PaymentSucceeded", "payment_succeeded" }
-            }
-        };
 
         _paymentsCollectionMock = new Mock<IMongoCollection<Payment>>();
         _dbContextMock.Setup(x => x.Payments).Returns(_paymentsCollectionMock.Object);
 
-        // Setup default resilience pipeline (pass-through)
-        var mockPipeline = new Polly.ResiliencePipelineBuilder()
-            .Build();
-        _resiliencePipelineServiceMock
-            .Setup(x => x.GetEventPublishingPipeline())
-            .Returns(mockPipeline);
+        // Mock OutboxService
+        var outboxServiceMock = new Mock<PaymentService.Services.IOutboxService>();
+        outboxServiceMock
+            .Setup(x => x.AddToOutboxAsync(It.IsAny<object>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _sut = new PaymentServiceImpl(
             _dbContextMock.Object,
-            _eventBusMock.Object,
-            Options.Create(_rabbitMQSettings),
-            _resiliencePipelineServiceMock.Object,
+            outboxServiceMock.Object,
             _loggerMock.Object);
     }
 
