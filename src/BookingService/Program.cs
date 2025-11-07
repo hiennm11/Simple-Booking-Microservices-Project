@@ -100,11 +100,17 @@ builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
 // Register Resilience Pipeline Service
 builder.Services.AddSingleton<IResiliencePipelineService, ResiliencePipelineService>();
 
+// Register Outbox Pattern Services
+builder.Services.AddScoped<IOutboxService, OutboxService>();
+
 // Register Services
 builder.Services.AddScoped<IBookingService, BookingServiceImpl>();
 
 // Register Background Services (Consumers)
 builder.Services.AddHostedService<PaymentSucceededConsumer>();
+
+// Register Outbox Publisher Background Service
+builder.Services.AddHostedService<BookingService.BackgroundServices.OutboxPublisherService>();
 
 // Add health checks with PostgreSQL database check
 builder.Services.AddHealthChecks()

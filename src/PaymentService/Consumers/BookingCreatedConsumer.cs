@@ -164,8 +164,13 @@ public class BookingCreatedConsumer : BackgroundService
         {
             _logger.LogInformation("Received BookingCreated event: {Message}", message);
 
-            var bookingEvent = JsonSerializer.Deserialize<BookingCreatedEvent>(message);
-            
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var bookingEvent = JsonSerializer.Deserialize<BookingCreatedEvent>(message, options);
+
             if (bookingEvent?.Data == null)
             {
                 _logger.LogWarning("Invalid BookingCreated event format. Rejecting message without requeue.");

@@ -139,8 +139,8 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Body $paymentBody `
                 -TimeoutSec 60
             
-            # Step 5: Wait for event processing
-            Start-Sleep -Milliseconds 2000
+            # Step 5: Wait for event processing (Outbox pattern polls every 1 second + processing time)
+            Start-Sleep -Milliseconds 8000
             
             # Step 6: Verify booking status with authentication
             $updatedBooking = Invoke-RestMethod -Uri "$gatewayUrl/api/bookings/$bookingId" `
@@ -276,8 +276,8 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 -Body $paymentBody `
                 -TimeoutSec 60
             
-            # Step 5: Wait for event processing
-            Start-Sleep -Milliseconds 2000
+            # Step 5: Wait for event processing (Outbox pattern polls every 1 second + processing time)
+            Start-Sleep -Milliseconds 8000
             
             # Step 6: Verify booking status with authentication
             $updatedBooking = Invoke-RestMethod -Uri "$GatewayUrl/api/bookings/$bookingId" `
