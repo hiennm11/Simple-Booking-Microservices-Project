@@ -4,6 +4,87 @@ A lightweight microservices-based demo built with **ASP.NET Core**, **RabbitMQ**
 
 ---
 
+# Focus Strategy: Microservices vs Computer Science Foundations
+
+## 1. Your Current Context
+
+You are a **.NET developer with 4 years of experience**, mostly doing outsource work.  
+Your goals include:
+
+1. Advancing to **Senior / Architect** level.
+2. Preparing to **change jobs in 2025**.
+3. Planning to build a **microservice pet project**.
+4. Wanting to gain a strong understanding of **Computer Science (CS)** without studying everything blindly.
+
+---
+
+## 2. Summary Decision
+
+→ **Prioritize Microservices first, and learn CS selectively in parallel to support microservice development.**
+
+This decision is based on three key reasons:
+
+---
+
+## 3. Why Prioritize Microservices Now
+
+### 3.1 Microservices are Your Practical Goal
+
+Working with microservices enables you to:
+
+- **Advance professionally**, because senior .NET engineers must understand modularization, API communication, queues, caching, etc.
+- **Prepare for job changes**, since many job descriptions require architecture and system design experience.
+- **Apply what you learn immediately**, preventing knowledge from becoming theoretical and disconnected.
+
+➡ Therefore, **focus on building a real microservice pet project** in the next **6–8 weeks**.
+
+---
+
+### 3.2 Computer Science Is the Foundation Behind Microservices
+
+CS is still important — but you should learn it **to support what you are currently building**, rather than studying the entire curriculum.
+
+| CS Area | What to Learn (for Microservices) | Real System Application |
+|--------|----------------------------------|------------------------|
+| **Data Structures & Algorithms** | hash tables, trees, queues, heaps, graphs | caching, routing, scheduling, queue processing |
+| **Networking** | TCP, HTTP, sockets, DNS, load balancing | API design, reverse proxying, scaling |
+| **Database Systems** | indexing, normalization, ACID, transactions | transactional consistency, event-driven data |
+| **Operating Systems** | threads, processes, concurrency | async/await behavior, background workers, scaling |
+| **Distributed Systems** | CAP theorem, consistency models, event sourcing | microservice communication & messaging design |
+
+🎯 **Learning Method:**  
+When building your microservice project:  
+→ **Encounter a problem → learn the CS concept related to it.**
+
+Examples:
+- Need to scale an API → learn **load balancing & caching**
+- Need background messaging → learn **concurrency & distributed messaging principles**
+
+---
+
+### 3.3 Balanced Strategy for the Next 3–6 Months
+
+| Time Period | Primary Focus | Parallel CS Study |
+|------------|--------------|------------------|
+| **Month 1–2** | Build a basic microservice project (auth, product, order services) | Study foundational CS (HTTP, DB basics, basic DSA) |
+| **Month 3–4** | Add queue, caching, logging, monitoring | Study system design & distributed systems |
+| **Month 5–6** | Refactor, deploy, optimize performance | Study deeper CS (OS concurrency, networking inside) |
+
+By the end of Month 6:
+- You have a **real portfolio project** to show.
+- You have **solid CS fundamentals** to understand deeper architecture.
+
+---
+
+## 4. Final Decision Summary
+
+| Option | Priority | Reason |
+|--------|----------|--------|
+| **Microservices** | **Primary Focus (70%)** | Direct career impact + practical portfolio |
+| **Computer Science** | **Study in Parallel (30%)** | Supports deeper understanding + long-term growth |
+
+---
+
 ## 🚀 Quick Start
 
 ```cmd
@@ -549,13 +630,65 @@ Centralized routing and security entry point.
 ### Fault Tolerance
 If PaymentService fails, BookingService still runs independently.
 
+## 📚 Learning Resources
+
+### 🎓 Knowledge Brief - Comprehensive Learning Guide
+
+A structured learning resource organized in the `/brief/` folder covering all concepts from this project:
+
+**Quick Access**:
+- **[Start Here: Quick Start Guide](brief/QUICK_START.md)** - How to use the brief
+- **[8-Week Learning Roadmap](brief/LEARNING_ROADMAP.md)** - Complete study plan
+- **[Architecture Patterns](brief/01-architecture-patterns/)** - Core concepts, patterns, trade-offs
+
+**What's Included**:
+- ✅ Microservices fundamentals with real project examples
+- ✅ Event-driven architecture deep dive
+- ✅ Outbox pattern implementation guide
+- ✅ Interview preparation materials
+- ✅ 8-week study plan (70% Microservices + 30% CS)
+- ⏳ More topics being added based on project features
+
+**Use Cases**:
+1. **Learning from Scratch**: Follow the 8-week roadmap
+2. **Interview Preparation**: 1-week focused review
+3. **Concept Reference**: Quick lookup when needed
+
+**See**: `/brief/README.md` for full navigation guide
+
+---
+
 ## 📚 Next Steps
 
-- Add UserService and InventoryService.
+### Phase 6 Continuation (Advanced Features)
 
-- Implement Saga Pattern for distributed transactions.
+- [x] ~~Implement Outbox Pattern for reliable event publishing~~ ✅ **COMPLETED** (November 7, 2025)
+- [ ] Add Notification Service for emails/SMS notifications
+- [ ] Implement Saga Pattern for complex distributed transactions
+- [ ] Add Circuit Breaker pattern with Polly
+- [ ] Implement Distributed Tracing with OpenTelemetry
+- [ ] Add Prometheus + Grafana for advanced monitoring
 
-- Add Health Checks and Observability (Prometheus + Grafana).
+### Deployment & Production
+
+- [ ] Deploy to Azure/AWS cloud platform
+- [ ] Set up CI/CD pipeline (GitHub Actions / Azure DevOps)
+- [ ] Configure production environment
+- [ ] Implement blue-green deployment
+- [ ] Set up auto-scaling policies
+
+### Learning Path
+
+Follow the comprehensive learning guide in `/brief/`:
+1. **Weeks 1-2**: Master architecture patterns
+2. **Weeks 3-4**: Understand resilience & communication
+3. **Weeks 5-6**: Security & API Gateway deep dive
+4. **Week 7**: Observability & monitoring
+5. **Week 8**: Interview preparation & portfolio polish
+
+**Goal**: Job-ready in 8 weeks with senior-level understanding 🚀
+
+---
 
 ## 📄 License
 
