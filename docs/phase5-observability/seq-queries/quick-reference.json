@@ -1,0 +1,155 @@
+{
+  "essentialQueries": {
+    "realTimeMonitoring": [
+      {
+        "name": "Real-Time Retry Monitor",
+        "query": "SELECT Service, COUNT(*) as RetryCount FROM stream WHERE @Message LIKE '%retry%' AND @Timestamp > Now() - 5m GROUP BY Service",
+        "use": "Monitor current retry activity - Run every 30 seconds"
+      },
+      {
+        "name": "Failed Operations (Critical)",
+        "query": "SELECT @Timestamp, Service, @Message FROM stream WHERE @Message LIKE '%failed after%retries%' AND @Timestamp > Now() - 1h ORDER BY @Timestamp DESC",
+        "use": "Identify operations that exhausted all retries - Check immediately on alerts"
+      },
+      {
+        "name": "System Health Score",
+        "query": "SELECT CAST((1.0 - CAST(COUNT(CASE WHEN @Level = 'Error' THEN 1 END) as FLOAT) / NULLIF(COUNT(*), 0)) * 100 as DECIMAL(5,2)) as HealthScore FROM stream WHERE @Timestamp > Now() - 1h",
+        "use": "Overall system health (target: > 95%) - Display on main dashboard"
+      }
+    ],
+    "connectivity": [
+      {
+        "name": "RabbitMQ Connection Status",
+        "query": "SELECT Service, COUNT(*) as ConnectionRetries FROM stream WHERE @Message LIKE '%RabbitMQ connection retry%' AND @Timestamp > Now() - 5m GROUP BY Service",
+        "use": "Check if RabbitMQ is accessible - Alert if > 5 retries"
+      },
+      {
+        "name": "Dead Letter Queue Messages",
+        "query": "SELECT @Timestamp, Service, BookingId, @Message FROM stream WHERE @Message LIKE '%Rejecting message%' AND @Timestamp > Now() - 24h ORDER BY @Timestamp DESC",
+        "use": "Find messages that failed processing - Investigate these"
+      }
+    ],
+    "businessMetrics": [
+      {
+        "name": "Event Publishing Success Rate",
+        "query": "SELECT CAST(SUM(CASE WHEN @Message LIKE '%event published%' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as decimal(5,2)) as SuccessRate FROM stream WHERE (@Message LIKE '%event published%' OR @Message LIKE '%Failed to publish%') AND @Timestamp > Now() - 1h",
+        "use": "Event delivery reliability (target: > 99%) - Key business metric"
+      },
+      {
+        "name": "Booking Flow Timeline",
+        "query": "SELECT BookingId, @Timestamp, Service, @Message FROM stream WHERE BookingId = 'REPLACE-WITH-BOOKING-ID' ORDER BY @Timestamp",
+        "use": "Debug specific booking - Replace BOOKING-ID with actual ID"
+      }
+    ],
+    "troubleshooting": [
+      {
+        "name": "Recent Errors",
+        "query": "SELECT @Timestamp, Service, @Level, @Message FROM stream WHERE @Level = 'Error' AND @Timestamp > Now() - 1h ORDER BY @Timestamp DESC",
+        "use": "Quick error overview - First check when investigating issues"
+      },
+      {
+        "name": "Most Common Errors",
+        "query": "SELECT @ExceptionType, COUNT(*) as Count FROM stream WHERE @Exception IS NOT NULL AND @Timestamp > Now() - 24h GROUP BY @ExceptionType ORDER BY Count DESC",
+        "use": "Identify recurring issues - Focus fix efforts on top errors"
+      },
+      {
+        "name": "Service Activity Summary",
+        "query": "SELECT Service, COUNT(*) as TotalLogs, COUNT(CASE WHEN @Level = 'Error' THEN 1 END) as Errors, COUNT(CASE WHEN @Message LIKE '%retry%' THEN 1 END) as Retries FROM stream WHERE @Timestamp > Now() - 1h GROUP BY Service",
+        "use": "Compare service health - Spot problematic services"
+      }
+    ]
+  },
+  "quickSetup": {
+    "step1_accessSeq": "http://localhost:5341",
+    "step2_runQuery": [
+      "1. Click in search box at top",
+      "2. Click 'SQL' button",
+      "3. Copy query from above",
+      "4. Paste and press Enter"
+    ],
+    "step3_saveQuery": [
+      "1. After running query, click bookmark/star icon",
+      "2. Enter name from 'name' field above",
+      "3. Find later in Workspace sidebar"
+    ],
+    "step4_createDashboard": [
+      "1. Dashboards (sidebar) > Create dashboard",
+      "2. Add chart > Select saved query",
+      "3. Choose chart type (Value/Time series/Bar/Table)",
+      "4. Set refresh interval (30s for real-time, 1-5m for historical)"
+    ]
+  },
+  "recommendedStarterDashboard": {
+    "name": "Production Monitoring - Starter",
+    "charts": [
+      {
+        "row": 1,
+        "title": "System Health",
+        "query": "System Health Score",
+        "type": "Gauge",
+        "refresh": "1 minute"
+      },
+      {
+        "row": 1,
+        "title": "Active Retries",
+        "query": "Real-Time Retry Monitor",
+        "type": "Bar",
+        "refresh": "30 seconds"
+      },
+      {
+        "row": 2,
+        "title": "Failed Operations",
+        "query": "Failed Operations (Critical)",
+        "type": "Table",
+        "refresh": "30 seconds"
+      },
+      {
+        "row": 3,
+        "title": "Recent Errors",
+        "query": "Recent Errors",
+        "type": "Table",
+        "refresh": "1 minute"
+      }
+    ]
+  },
+  "alertSetup": {
+    "criticalAlerts": [
+      {
+        "name": "Retry Exhaustion",
+        "expression": "SELECT @Timestamp, Service, @Message FROM stream WHERE (@Message LIKE '%failed after%retries%' OR @Message LIKE '%Moving to DLQ%') AND @Timestamp > Now() - 1m",
+        "action": "Email + Slack + PagerDuty",
+        "suppress": "5 minutes"
+      },
+      {
+        "name": "High Retry Rate",
+        "expression": "SELECT Service, COUNT(*) as RetryCount FROM stream WHERE @Message LIKE '%retry%' AND @Timestamp > Now() - 5m GROUP BY Service HAVING COUNT(*) > 20",
+        "action": "Email + Slack",
+        "suppress": "10 minutes"
+      }
+    ],
+    "setupSteps": [
+      "1. Workspace > Signals tab > Create signal",
+      "2. Paste 'expression' into Signal expression field",
+      "3. Set title from 'name'",
+      "4. Set Suppress duration",
+      "5. Add action > Select notification app (install first if needed)",
+      "6. Save signal"
+    ]
+  },
+  "usage": {
+    "howToUseThisFile": [
+      "This JSON provides a quick reference for essential Seq queries",
+      "Queries are organized by purpose for easy selection",
+      "Copy-paste queries directly into Seq's SQL search",
+      "Start with 'realTimeMonitoring' queries for immediate value",
+      "Use 'recommendedStarterDashboard' to build your first dashboard"
+    ],
+    "documentation": [
+      "Full guide: ../PHASE5_OBSERVABILITY.md",
+      "Seq 2025.2 help: ../SEQ_2025_QUICK_REFERENCE.md",
+      "All 29 queries: retry-monitoring.sql",
+      "All 8 alerts: signals-alerts.sql",
+      "Dashboard templates: DASHBOARD_GUIDE.md"
+    ]
+  }
+}
