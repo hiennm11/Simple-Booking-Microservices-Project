@@ -21,4 +21,9 @@ public interface IPaymentService
     /// Get payment by booking ID
     /// </summary>
     Task<PaymentResponse?> GetPaymentByBookingIdAsync(Guid bookingId);
+
+    /// <summary>
+    /// Retry a failed payment for a booking
+    /// </summary>
+    Task<PaymentResponse> RetryPaymentAsync(RetryPaymentRequest request);
 }

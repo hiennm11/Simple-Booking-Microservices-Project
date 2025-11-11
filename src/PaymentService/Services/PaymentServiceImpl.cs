@@ -218,6 +218,178 @@ public class PaymentServiceImpl : IPaymentService
     }
 
     /// <summary>
+    /// Retry a failed payment for a booking
+    /// </summary>
+    public async Task<PaymentResponse> RetryPaymentAsync(RetryPaymentRequest request)
+    {
+        _logger.LogInformation("Retrying payment for BookingId: {BookingId}", request.BookingId);
+
+        // Find the existing failed payment
+        var existingPayment = await _dbContext.Payments
+            .Find(p => p.BookingId == request.BookingId && p.Status == "FAILED")
+            .SortByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (existingPayment == null)
+        {
+            _logger.LogWarning("No failed payment found for BookingId: {BookingId}", request.BookingId);
+            throw new InvalidOperationException($"No failed payment found for booking {request.BookingId}");
+        }
+
+        // Check if max retries reached (limit to 3 retries)
+        const int maxRetries = 3;
+        if (existingPayment.RetryCount >= maxRetries)
+        {
+            _logger.LogWarning(
+                "Max retry attempts ({MaxRetries}) reached for payment {PaymentId}",
+                maxRetries,
+                existingPayment.Id);
+            throw new InvalidOperationException($"Maximum retry attempts ({maxRetries}) reached for this payment");
+        }
+
+        // Update retry tracking
+        existingPayment.RetryCount++;
+        existingPayment.LastRetryAt = DateTime.UtcNow;
+        existingPayment.Status = "PENDING";
+        existingPayment.ErrorMessage = null;
+        existingPayment.UpdatedAt = DateTime.UtcNow;
+
+        // Update payment method if provided
+        if (!string.IsNullOrEmpty(request.PaymentMethod))
+        {
+            existingPayment.PaymentMethod = request.PaymentMethod;
+        }
+
+        // Update the payment in database
+        var updateDefinition = Builders<Payment>.Update
+            .Set(p => p.RetryCount, existingPayment.RetryCount)
+            .Set(p => p.LastRetryAt, existingPayment.LastRetryAt)
+            .Set(p => p.Status, existingPayment.Status)
+            .Set(p => p.ErrorMessage, existingPayment.ErrorMessage)
+            .Set(p => p.PaymentMethod, existingPayment.PaymentMethod)
+            .Set(p => p.UpdatedAt, existingPayment.UpdatedAt);
+
+        await _dbContext.Payments.UpdateOneAsync(p => p.Id == existingPayment.Id, updateDefinition);
+
+        _logger.LogInformation(
+            "Payment {PaymentId} retry attempt {RetryCount}/{MaxRetries}",
+            existingPayment.Id,
+            existingPayment.RetryCount,
+            maxRetries);
+
+        // Simulate payment processing
+        var isSuccess = await SimulatePaymentProcessingAsync(existingPayment);
+
+        if (isSuccess)
+        {
+            // Update payment status to SUCCESS
+            existingPayment.Status = "SUCCESS";
+            existingPayment.TransactionId = $"TXN-{Guid.NewGuid():N}";
+            existingPayment.ProcessedAt = DateTime.UtcNow;
+            existingPayment.UpdatedAt = DateTime.UtcNow;
+
+            var successUpdate = Builders<Payment>.Update
+                .Set(p => p.Status, existingPayment.Status)
+                .Set(p => p.TransactionId, existingPayment.TransactionId)
+                .Set(p => p.ProcessedAt, existingPayment.ProcessedAt)
+                .Set(p => p.UpdatedAt, existingPayment.UpdatedAt);
+
+            await _dbContext.Payments.UpdateOneAsync(p => p.Id == existingPayment.Id, successUpdate);
+
+            _logger.LogInformation("Payment retry successful: {PaymentId}", existingPayment.Id);
+
+            // Save PaymentSucceeded event to outbox
+            var paymentEvent = new PaymentSucceededEvent
+            {
+                EventId = Guid.NewGuid(),
+                EventName = "PaymentSucceeded",
+                Timestamp = DateTime.UtcNow,
+                Data = new PaymentSucceededData
+                {
+                    PaymentId = existingPayment.Id,
+                    BookingId = existingPayment.BookingId,
+                    Amount = existingPayment.Amount,
+                    Status = "SUCCESS"
+                }
+            };
+
+            try
+            {
+                await _outboxService.AddToOutboxAsync(paymentEvent, "PaymentSucceeded");
+
+                _logger.LogInformation(
+                    "PaymentSucceeded event saved to outbox after retry for PaymentId: {PaymentId}, BookingId: {BookingId}",
+                    existingPayment.Id,
+                    existingPayment.BookingId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to save PaymentSucceeded event to outbox after retry for PaymentId: {PaymentId}",
+                    existingPayment.Id);
+            }
+        }
+        else
+        {
+            // Update payment status back to FAILED
+            existingPayment.Status = "FAILED";
+            existingPayment.ErrorMessage = "Payment retry failed";
+            existingPayment.ProcessedAt = DateTime.UtcNow;
+            existingPayment.UpdatedAt = DateTime.UtcNow;
+
+            var failUpdate = Builders<Payment>.Update
+                .Set(p => p.Status, existingPayment.Status)
+                .Set(p => p.ErrorMessage, existingPayment.ErrorMessage)
+                .Set(p => p.ProcessedAt, existingPayment.ProcessedAt)
+                .Set(p => p.UpdatedAt, existingPayment.UpdatedAt);
+
+            await _dbContext.Payments.UpdateOneAsync(p => p.Id == existingPayment.Id, failUpdate);
+
+            _logger.LogWarning(
+                "Payment retry failed: {PaymentId}, Retry attempt: {RetryCount}/{MaxRetries}",
+                existingPayment.Id,
+                existingPayment.RetryCount,
+                maxRetries);
+
+            // Save PaymentFailed event to outbox
+            var paymentFailedEvent = new PaymentFailedEvent
+            {
+                EventId = Guid.NewGuid(),
+                EventName = "PaymentFailed",
+                Timestamp = DateTime.UtcNow,
+                Data = new PaymentFailedData
+                {
+                    PaymentId = existingPayment.Id,
+                    BookingId = existingPayment.BookingId,
+                    Amount = existingPayment.Amount,
+                    Reason = $"Payment retry failed (Attempt {existingPayment.RetryCount}/{maxRetries})",
+                    Status = "FAILED"
+                }
+            };
+
+            try
+            {
+                await _outboxService.AddToOutboxAsync(paymentFailedEvent, "PaymentFailed");
+
+                _logger.LogInformation(
+                    "PaymentFailed event saved to outbox after retry for PaymentId: {PaymentId}, BookingId: {BookingId}",
+                    existingPayment.Id,
+                    existingPayment.BookingId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to save PaymentFailed event to outbox after retry for PaymentId: {PaymentId}",
+                    existingPayment.Id);
+            }
+        }
+
+        return MapToResponse(existingPayment);
+    }
+
+    /// <summary>
     /// Map Payment model to PaymentResponse DTO
     /// </summary>
     private static PaymentResponse MapToResponse(Payment payment)
@@ -232,7 +404,9 @@ public class PaymentServiceImpl : IPaymentService
             TransactionId = payment.TransactionId,
             ErrorMessage = payment.ErrorMessage,
             CreatedAt = payment.CreatedAt,
-            ProcessedAt = payment.ProcessedAt
+            ProcessedAt = payment.ProcessedAt,
+            RetryCount = payment.RetryCount,
+            LastRetryAt = payment.LastRetryAt
         };
     }
 }

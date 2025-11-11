@@ -39,4 +39,10 @@ public class Payment
 
     [BsonElement("processedAt")]
     public DateTime? ProcessedAt { get; set; }
+
+    [BsonElement("retryCount")]
+    public int RetryCount { get; set; } = 0;
+
+    [BsonElement("lastRetryAt")]
+    public DateTime? LastRetryAt { get; set; }
 }
