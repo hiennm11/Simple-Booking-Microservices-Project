@@ -170,7 +170,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 
                 # Retry payment (up to 3 times if needed)
                 $attemptCount = 0
-                $maxRetries = 3
+                $maxRetries = 5
                 $paymentSucceeded = $false
                 
                 $lockTaken = $false

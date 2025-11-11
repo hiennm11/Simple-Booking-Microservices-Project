@@ -29,6 +29,9 @@ public class MongoDbContext
     public virtual IMongoCollection<OutboxMessage> OutboxMessages =>
         _database.GetCollection<OutboxMessage>(_settings.Collections.GetValueOrDefault("OutboxMessages", "outbox_messages"));
     
+    public virtual IMongoCollection<DeadLetterMessage> DeadLetterMessages =>
+        _database.GetCollection<DeadLetterMessage>(_settings.Collections.GetValueOrDefault("DeadLetterMessages", "dead_letter_messages"));
+    
     /// <summary>
     /// Creates necessary indexes for collections
     /// </summary>
@@ -51,6 +54,22 @@ public class MongoDbContext
         var eventTypeIndexKeys = Builders<OutboxMessage>.IndexKeys.Ascending(m => m.EventType);
         var eventTypeIndexModel = new CreateIndexModel<OutboxMessage>(eventTypeIndexKeys);
         OutboxMessages.Indexes.CreateOne(eventTypeIndexModel);
+        
+        // Create indexes for DeadLetterMessages
+        var dlqResolvedIndexKeys = Builders<DeadLetterMessage>.IndexKeys
+            .Ascending(m => m.Resolved)
+            .Descending(m => m.FailedAt);
+        var dlqResolvedIndexModel = new CreateIndexModel<DeadLetterMessage>(dlqResolvedIndexKeys, 
+            new CreateIndexOptions { Name = "idx_resolved_failed" });
+        DeadLetterMessages.Indexes.CreateOne(dlqResolvedIndexModel);
+        
+        var dlqEventTypeIndexKeys = Builders<DeadLetterMessage>.IndexKeys.Ascending(m => m.EventType);
+        var dlqEventTypeIndexModel = new CreateIndexModel<DeadLetterMessage>(dlqEventTypeIndexKeys);
+        DeadLetterMessages.Indexes.CreateOne(dlqEventTypeIndexModel);
+        
+        var dlqSourceQueueIndexKeys = Builders<DeadLetterMessage>.IndexKeys.Ascending(m => m.SourceQueue);
+        var dlqSourceQueueIndexModel = new CreateIndexModel<DeadLetterMessage>(dlqSourceQueueIndexKeys);
+        DeadLetterMessages.Indexes.CreateOne(dlqSourceQueueIndexModel);
     }
 }
 

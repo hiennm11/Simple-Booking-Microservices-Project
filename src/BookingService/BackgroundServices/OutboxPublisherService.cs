@@ -17,7 +17,6 @@ public class OutboxPublisherService : BackgroundService
     private readonly ILogger<OutboxPublisherService> _logger;
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
-    private readonly int _maxRetries;
 
     public OutboxPublisherService(
         IServiceProvider serviceProvider,
@@ -31,13 +30,11 @@ public class OutboxPublisherService : BackgroundService
         _pollingInterval = TimeSpan.FromSeconds(
             configuration.GetValue<int>("OutboxPublisher:PollingIntervalSeconds", 10));
         _batchSize = configuration.GetValue<int>("OutboxPublisher:BatchSize", 100);
-        _maxRetries = configuration.GetValue<int>("OutboxPublisher:MaxRetries", 5);
         
         _logger.LogInformation(
-            "OutboxPublisher configured: PollingInterval={PollingInterval}s, BatchSize={BatchSize}, MaxRetries={MaxRetries}",
+            "OutboxPublisher configured: PollingInterval={PollingInterval}s, BatchSize={BatchSize}",
             _pollingInterval.TotalSeconds,
-            _batchSize,
-            _maxRetries);
+            _batchSize);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -85,17 +82,7 @@ public class OutboxPublisherService : BackgroundService
         _logger.LogInformation("Processing {Count} unpublished messages from outbox", messages.Count);
 
         foreach (var message in messages)
-        {
-            // Skip messages that have exceeded max retry attempts
-            if (message.RetryCount >= _maxRetries)
-            {
-                _logger.LogWarning(
-                    "Message {MessageId} has exceeded max retries ({MaxRetries}), skipping. Manual intervention required.",
-                    message.Id,
-                    _maxRetries);
-                continue;
-            }
-
+        {            
             try
             {
                 // Determine queue name based on event type

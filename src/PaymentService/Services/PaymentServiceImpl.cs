@@ -18,15 +18,22 @@ public class PaymentServiceImpl : IPaymentService
     private readonly MongoDbContext _dbContext;
     private readonly IOutboxService _outboxService;
     private readonly ILogger<PaymentServiceImpl> _logger;
+    private readonly int _maxPaymentRetries;
 
     public PaymentServiceImpl(
         MongoDbContext dbContext,
         IOutboxService outboxService,
-        ILogger<PaymentServiceImpl> logger)
+        ILogger<PaymentServiceImpl> logger,
+        IConfiguration configuration)
     {
         _dbContext = dbContext;
         _outboxService = outboxService;
         _logger = logger;
+        _maxPaymentRetries = configuration.GetValue<int>("PaymentRetry:MaxRetries", 3);
+        
+        _logger.LogInformation(
+            "PaymentService configured with MaxPaymentRetries: {MaxRetries}",
+            _maxPaymentRetries);
     }
 
     public async Task<PaymentResponse> ProcessPaymentAsync(ProcessPaymentRequest request)
@@ -210,7 +217,10 @@ public class PaymentServiceImpl : IPaymentService
 
         // 90% success rate
         var random = new Random();
-        var isSuccess = random.Next(1, 11) <= 9;
+        // var isSuccess = random.Next(1, 11) <= 9;
+
+        // 10% success rate for testing retries
+        var isSuccess = random.Next(1, 11) <= 1;
 
         _logger.LogInformation("Payment simulation result: {Result}", isSuccess ? "SUCCESS" : "FAILED");
 
@@ -236,15 +246,36 @@ public class PaymentServiceImpl : IPaymentService
             throw new InvalidOperationException($"No failed payment found for booking {request.BookingId}");
         }
 
-        // Check if max retries reached (limit to 3 retries)
-        const int maxRetries = 3;
-        if (existingPayment.RetryCount >= maxRetries)
+        // Check if max retries reached
+        if (existingPayment.RetryCount >= _maxPaymentRetries)
         {
-            _logger.LogWarning(
-                "Max retry attempts ({MaxRetries}) reached for payment {PaymentId}",
-                maxRetries,
+            _logger.LogError(
+                "Max retry attempts ({MaxRetries}) reached for payment {PaymentId}. Moving to Dead Letter Queue.",
+                _maxPaymentRetries,
                 existingPayment.Id);
-            throw new InvalidOperationException($"Maximum retry attempts ({maxRetries}) reached for this payment");
+            
+            // Store in Dead Letter Queue for manual investigation
+            await StorePaymentInDeadLetterQueueAsync(existingPayment, 
+                $"Maximum retry attempts ({_maxPaymentRetries}) reached. Manual intervention required.");
+            
+            // Update payment status to indicate it's permanently failed
+            existingPayment.Status = "PERMANENTLY_FAILED";
+            existingPayment.ErrorMessage = $"Maximum retry attempts ({_maxPaymentRetries}) reached. Payment moved to Dead Letter Queue.";
+            existingPayment.UpdatedAt = DateTime.UtcNow;
+            
+            var permanentFailUpdate = Builders<Payment>.Update
+                .Set(p => p.Status, existingPayment.Status)
+                .Set(p => p.ErrorMessage, existingPayment.ErrorMessage)
+                .Set(p => p.UpdatedAt, existingPayment.UpdatedAt);
+            
+            await _dbContext.Payments.UpdateOneAsync(p => p.Id == existingPayment.Id, permanentFailUpdate);
+            
+            _logger.LogInformation(
+                "Payment {PaymentId} marked as PERMANENTLY_FAILED and stored in DLQ",
+                existingPayment.Id);
+            
+            // Return the response instead of throwing exception
+            return MapToResponse(existingPayment);
         }
 
         // Update retry tracking
@@ -275,7 +306,7 @@ public class PaymentServiceImpl : IPaymentService
             "Payment {PaymentId} retry attempt {RetryCount}/{MaxRetries}",
             existingPayment.Id,
             existingPayment.RetryCount,
-            maxRetries);
+            _maxPaymentRetries);
 
         // Simulate payment processing
         var isSuccess = await SimulatePaymentProcessingAsync(existingPayment);
@@ -350,7 +381,7 @@ public class PaymentServiceImpl : IPaymentService
                 "Payment retry failed: {PaymentId}, Retry attempt: {RetryCount}/{MaxRetries}",
                 existingPayment.Id,
                 existingPayment.RetryCount,
-                maxRetries);
+                _maxPaymentRetries);
 
             // Save PaymentFailed event to outbox
             var paymentFailedEvent = new PaymentFailedEvent
@@ -363,7 +394,7 @@ public class PaymentServiceImpl : IPaymentService
                     PaymentId = existingPayment.Id,
                     BookingId = existingPayment.BookingId,
                     Amount = existingPayment.Amount,
-                    Reason = $"Payment retry failed (Attempt {existingPayment.RetryCount}/{maxRetries})",
+                    Reason = $"Payment retry failed (Attempt {existingPayment.RetryCount}/{_maxPaymentRetries})",
                     Status = "FAILED"
                 }
             };
@@ -387,6 +418,53 @@ public class PaymentServiceImpl : IPaymentService
         }
 
         return MapToResponse(existingPayment);
+    }
+
+    /// <summary>
+    /// Store a permanently failed payment in the Dead Letter Queue
+    /// </summary>
+    private async Task StorePaymentInDeadLetterQueueAsync(Payment payment, string reason)
+    {
+        try
+        {
+            var deadLetterMessage = new DeadLetterMessage
+            {
+                SourceQueue = "payment_retry",
+                EventType = "PaymentRetryFailed",
+                Payload = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    PaymentId = payment.Id,
+                    BookingId = payment.BookingId,
+                    Amount = payment.Amount,
+                    PaymentMethod = payment.PaymentMethod,
+                    RetryCount = payment.RetryCount,
+                    LastRetryAt = payment.LastRetryAt,
+                    OriginalCreatedAt = payment.CreatedAt,
+                    FailureReason = payment.ErrorMessage
+                }),
+                ErrorMessage = reason,
+                StackTrace = null,
+                AttemptCount = payment.RetryCount,
+                FirstAttemptAt = payment.CreatedAt,
+                FailedAt = DateTime.UtcNow,
+                Resolved = false
+            };
+
+            await _dbContext.DeadLetterMessages.InsertOneAsync(deadLetterMessage);
+
+            _logger.LogInformation(
+                "Payment {PaymentId} stored in Dead Letter Queue with ID {DLQId}",
+                payment.Id,
+                deadLetterMessage.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to store payment {PaymentId} in Dead Letter Queue",
+                payment.Id);
+            // Don't throw - we still want to update the payment status even if DLQ storage fails
+        }
     }
 
     /// <summary>

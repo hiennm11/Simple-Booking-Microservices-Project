@@ -102,6 +102,9 @@ builder.Services.AddScoped<IPaymentService, PaymentServiceImpl>();
 // Note: BookingCreatedConsumer is available but not enabled by default
 // Enable it to automatically process payments when bookings are created
 
+// Register Dead Letter Queue Handler
+builder.Services.AddHostedService<PaymentService.Consumers.DeadLetterQueueHandler>();
+
 // Register Outbox Publisher Background Service
 builder.Services.AddHostedService<PaymentService.BackgroundServices.OutboxPublisherService>();
 

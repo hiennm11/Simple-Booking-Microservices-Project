@@ -29,16 +29,22 @@ public class PaymentSucceededConsumer : BackgroundService
     private IConnection? _connection;
     private IChannel? _channel;
     private int _retryCount = 0;
-    private const int MAX_REQUEUE_ATTEMPTS = 3;
+    private readonly int _maxRequeueAttempts;
 
     public PaymentSucceededConsumer(
         IServiceProvider serviceProvider,
         IOptions<RabbitMQSettings> settings,
-        ILogger<PaymentSucceededConsumer> logger)
+        ILogger<PaymentSucceededConsumer> logger,
+        IConfiguration configuration)
     {
         _serviceProvider = serviceProvider;
         _settings = settings.Value;
         _logger = logger;
+        _maxRequeueAttempts = configuration.GetValue<int>("MessageConsumer:MaxRequeueAttempts", 3);
+        
+        _logger.LogInformation(
+            "PaymentSucceededConsumer configured with MaxRequeueAttempts: {MaxAttempts}",
+            _maxRequeueAttempts);
 
         // Create inline resilience pipeline for message processing
         _resiliencePipeline = new ResiliencePipelineBuilder()
@@ -198,12 +204,12 @@ public class PaymentSucceededConsumer : BackgroundService
 
             _retryCount++;
 
-            if (_retryCount >= MAX_REQUEUE_ATTEMPTS)
+            if (_retryCount >= _maxRequeueAttempts)
             {
                 // ❌ Max retries reached - send to dead letter queue or log
                 _logger.LogError(
                     "Message failed after {Attempts} requeue attempts. Moving to DLQ.",
-                    MAX_REQUEUE_ATTEMPTS);
+                    _maxRequeueAttempts);
 
                 await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
                 _retryCount = 0;
@@ -214,7 +220,7 @@ public class PaymentSucceededConsumer : BackgroundService
             {
                 // ⚠️ Requeue for retry
                 _logger.LogWarning("Requeuing message. Attempt {Attempt}/{Max}",
-                    _retryCount, MAX_REQUEUE_ATTEMPTS);
+                    _retryCount, _maxRequeueAttempts);
 
                 await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: true);
             }

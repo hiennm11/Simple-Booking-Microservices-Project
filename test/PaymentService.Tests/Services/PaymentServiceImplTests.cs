@@ -46,7 +46,8 @@ public class PaymentServiceImplTests
         _sut = new PaymentServiceImpl(
             _dbContextMock.Object,
             outboxServiceMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            null!); // ResiliencePipelineService not needed for these tests
     }
 
     #region ProcessPaymentAsync Tests

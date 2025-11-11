@@ -27,23 +27,29 @@ public class PaymentFailedConsumer : BackgroundService
     private readonly ResiliencePipeline _connectionPipeline;
     private IConnection? _connection;
     private IChannel? _channel;
-    private int _retryCount = 0;
-    private const int MAX_REQUEUE_ATTEMPTS = 3;
 
     public PaymentFailedConsumer(
         IServiceProvider serviceProvider,
         IOptions<RabbitMQSettings> settings,
-        ILogger<PaymentFailedConsumer> logger)
-    {
+        ILogger<PaymentFailedConsumer> logger,
+        IConfiguration configuration)
+    { 
         _serviceProvider = serviceProvider;
         _settings = settings.Value;
         _logger = logger;
 
+        var maxRetryAttempts = configuration.GetValue<int>("MessageConsumer:MaxRetryAttempts", 3);
+        
+        _logger.LogInformation(
+            "PaymentFailedConsumer configured with MaxRetryAttempts: {MaxAttempts}",
+            maxRetryAttempts);
+
         // Create inline resilience pipeline for message processing
+        // This handles all retries - if it fails after all retries, message goes to DLQ
         _resiliencePipeline = new ResiliencePipelineBuilder()
             .AddRetry(new RetryStrategyOptions
             {
-                MaxRetryAttempts = 3,
+                MaxRetryAttempts = maxRetryAttempts,
                 Delay = TimeSpan.FromSeconds(2),
                 BackoffType = DelayBackoffType.Exponential,
                 UseJitter = true,
@@ -51,7 +57,7 @@ public class PaymentFailedConsumer : BackgroundService
                 {
                     _logger.LogWarning(
                         "Retrying message processing. Attempt {Attempt}/{MaxAttempts}",
-                        args.AttemptNumber, 3);
+                        args.AttemptNumber, maxRetryAttempts);
                     return ValueTask.CompletedTask;
                 }
             })
@@ -158,6 +164,8 @@ public class PaymentFailedConsumer : BackgroundService
     {
         var body = ea.Body.ToArray();
         var message = Encoding.UTF8.GetString(body);
+        var deliveryTag = ea.DeliveryTag;
+        var firstAttemptTime = DateTime.UtcNow;
 
         try
         {
@@ -170,53 +178,92 @@ public class PaymentFailedConsumer : BackgroundService
 
             var paymentEvent = JsonSerializer.Deserialize<PaymentFailedEvent>(message, options);
 
-            if (paymentEvent?.Data == null)
+            if (paymentEvent == null)
             {
-                _logger.LogWarning("Invalid PaymentFailed event format");
-                // ❌ Permanent failure - don't requeue
-                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
+                _logger.LogWarning("Invalid PaymentFailed event format - sending to DLQ");
+                // ❌ Permanent failure - send to DLQ
+                await SendToDeadLetterQueueAsync(message, "Invalid event format", null, firstAttemptTime, 0);
+                await _channel!.BasicAckAsync(deliveryTag, false);
                 return;
             }
 
-            // ✅ Process with retry policy
+            // ✅ Process with retry policy (resilience pipeline handles all retries)
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 await ProcessPaymentFailedAsync(paymentEvent);
             }, CancellationToken.None);
 
             // ✅ Success - acknowledge
-            await _channel!.BasicAckAsync(ea.DeliveryTag, false);
-            _retryCount = 0; // Reset counter
+            await _channel!.BasicAckAsync(deliveryTag, false);
 
             _logger.LogInformation("PaymentFailed event processed successfully for BookingId: {BookingId}",
                 paymentEvent.Data.BookingId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing PaymentFailed event: {Message}", message);
+            // ❌ Failed after all resilience pipeline retries - send to DLQ
+            _logger.LogError(ex, 
+                "PaymentFailed event processing failed after all retry attempts. Moving to DLQ. Message: {Message}", 
+                message);
 
-            _retryCount++;
+            await SendToDeadLetterQueueAsync(message, ex.Message, ex.StackTrace, firstAttemptTime, 3);
+            
+            // Acknowledge to remove from queue (already sent to DLQ)
+            await _channel!.BasicAckAsync(deliveryTag, false);
+        }
+    }
 
-            if (_retryCount >= MAX_REQUEUE_ATTEMPTS)
+    private async Task SendToDeadLetterQueueAsync(
+        string message,
+        string errorMessage,
+        string? stackTrace,
+        DateTime firstAttemptTime,
+        int retryCount)
+    {
+        try
+        {
+            var dlqName = _settings.Queues.GetValueOrDefault("PaymentFailed", "payment_failed") + "_dlq";
+            
+            // Ensure DLQ exists
+            await _channel!.QueueDeclareAsync(
+                queue: dlqName,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null);
+
+            // Create properties with metadata
+            var properties = new BasicProperties
             {
-                // ❌ Max retries reached - send to dead letter queue or log
-                _logger.LogError(
-                    "Message failed after {Attempts} requeue attempts. Moving to DLQ.",
-                    MAX_REQUEUE_ATTEMPTS);
+                Persistent = true,
+                Headers = new Dictionary<string, object?>
+                {
+                    ["x-retry-count"] = retryCount,
+                    ["x-first-attempt"] = firstAttemptTime.ToString("O"),
+                    ["x-error-message"] = errorMessage,
+                    ["x-stack-trace"] = stackTrace ?? "",
+                    ["x-original-queue"] = _settings.Queues.GetValueOrDefault("PaymentFailed", "payment_failed"),
+                    ["x-failed-at"] = DateTime.UtcNow.ToString("O")
+                }
+            };
 
-                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
-                _retryCount = 0;
+            // Publish to DLQ
+            await _channel.BasicPublishAsync(
+                exchange: "",
+                routingKey: dlqName,
+                mandatory: false,
+                basicProperties: properties,
+                body: Encoding.UTF8.GetBytes(message));
 
-                // TODO: Store in dead-letter table for manual investigation
-            }
-            else
-            {
-                // ⚠️ Requeue for retry
-                _logger.LogWarning("Requeuing message. Attempt {Attempt}/{Max}",
-                    _retryCount, MAX_REQUEUE_ATTEMPTS);
-
-                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: true);
-            }
+            _logger.LogInformation(
+                "Message sent to Dead Letter Queue: {DLQName}, Error: {Error}, RetryCount: {RetryCount}",
+                dlqName,
+                errorMessage,
+                retryCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send message to Dead Letter Queue");
         }
     }
 
