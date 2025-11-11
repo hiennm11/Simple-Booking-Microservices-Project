@@ -151,20 +151,20 @@ This brief aligns with your **70% Microservices + 30% CS** strategy:
 
 Use this checklist to track your learning:
 
-### Architecture Patterns ⬜
-- [ ] Microservices fundamentals (✅ Implemented)
-- [ ] Event-driven architecture (✅ Implemented)
-- [ ] Database per service (✅ Implemented)
-- [ ] API Gateway (✅ Implemented)
-- [ ] Outbox pattern (✅ Implemented)
+### Architecture Patterns ✅
+- [x] Microservices fundamentals (✅ Implemented + Documented)
+- [x] Event-driven architecture (✅ Implemented + Documented)
+- [x] Database per service (✅ Implemented + Documented)
+- [x] API Gateway (✅ Implemented + Documented)
+- [x] Outbox pattern (✅ Implemented + Documented)
 - [ ] Saga pattern (⏳ Next)
 - [ ] Circuit breaker (⏳ Next)
 
-### Communication ⬜
-- [ ] REST APIs (✅ Implemented)
-- [ ] RabbitMQ (✅ Implemented)
-- [ ] Event choreography (✅ Implemented)
-- [ ] Correlation IDs (✅ Implemented)
+### Communication ✅
+- [x] Synchronous vs Asynchronous (✅ Documented)
+- [x] RabbitMQ messaging (✅ Implemented + Documented)
+- [x] Event choreography (✅ Implemented + Documented)
+- [x] Correlation IDs (✅ Implemented + Documented)
 
 ### Resilience ⬜
 - [ ] Retry with Polly (✅ Implemented)
