@@ -135,6 +135,42 @@ public class PaymentServiceImpl : IPaymentService
             await _dbContext.Payments.UpdateOneAsync(p => p.Id == payment.Id, update);
 
             _logger.LogWarning("Payment processing failed: {PaymentId}", payment.Id);
+
+            // Save PaymentFailed event to outbox
+            var paymentFailedEvent = new PaymentFailedEvent
+            {
+                EventId = Guid.NewGuid(),
+                EventName = "PaymentFailed",
+                Timestamp = DateTime.UtcNow,
+                Data = new PaymentFailedData
+                {
+                    PaymentId = payment.Id,
+                    BookingId = payment.BookingId,
+                    Amount = payment.Amount,
+                    Reason = payment.ErrorMessage ?? "Payment processing failed",
+                    Status = "FAILED"
+                }
+            };
+
+            try
+            {
+                // Save event to outbox for guaranteed delivery
+                await _outboxService.AddToOutboxAsync(
+                    paymentFailedEvent,
+                    "PaymentFailed");
+
+                _logger.LogInformation(
+                    "PaymentFailed event saved to outbox for PaymentId: {PaymentId}, BookingId: {BookingId}",
+                    payment.Id,
+                    payment.BookingId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to save PaymentFailed event to outbox for PaymentId: {PaymentId}",
+                    payment.Id);
+            }
         }
 
         return MapToResponse(payment);

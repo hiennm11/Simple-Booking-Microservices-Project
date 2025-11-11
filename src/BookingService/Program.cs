@@ -108,6 +108,7 @@ builder.Services.AddScoped<IBookingService, BookingServiceImpl>();
 
 // Register Background Services (Consumers)
 builder.Services.AddHostedService<PaymentSucceededConsumer>();
+builder.Services.AddHostedService<PaymentFailedConsumer>();
 
 // Register Outbox Publisher Background Service
 builder.Services.AddHostedService<BookingService.BackgroundServices.OutboxPublisherService>();
