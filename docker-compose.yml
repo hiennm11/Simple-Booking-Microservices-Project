@@ -39,6 +39,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # PostgreSQL for InventoryService
+  inventorydb:
+    image: postgres:16-alpine
+    container_name: inventorydb
+    environment:
+      POSTGRES_USER: ${INVENTORYDB_USER}
+      POSTGRES_PASSWORD: ${INVENTORYDB_PASSWORD}
+      POSTGRES_DB: ${INVENTORYDB_NAME}
+    ports:
+      - "${INVENTORYDB_PORT}:5432"
+    volumes:
+      - inventorydb_data:/var/lib/postgresql/data
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INVENTORYDB_USER} -d ${INVENTORYDB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # MongoDB for PaymentService
   paymentdb:
     image: mongo:7.0
@@ -196,6 +216,41 @@ services:
       timeout: 5s
       retries: 5
 
+  # InventoryService (ASP.NET Core)
+  inventoryservice:
+    build:
+      context: ./src
+      dockerfile: InventoryService/Dockerfile
+    container_name: inventoryservice
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      DOTNET_RUNNING_IN_CONTAINER: true
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: false
+      ConnectionStrings__DefaultConnection: "Host=${INVENTORYDB_HOST};Port=5432;Database=${INVENTORYDB_NAME};Username=${INVENTORYDB_USER};Password=${INVENTORYDB_PASSWORD};Maximum Pool Size=200;Minimum Pool Size=10;Connection Lifetime=300"
+      JwtSettings__SecretKey: "${JWT_SECRET_KEY}"
+      JwtSettings__Issuer: "${JWT_ISSUER}"
+      JwtSettings__Audience: "${JWT_AUDIENCE}"
+      RabbitMQ__HostName: "${RABBITMQ_HOST}"
+      RabbitMQ__Port: "${RABBITMQ_PORT}"
+      RabbitMQ__UserName: "${RABBITMQ_USER}"
+      RabbitMQ__Password: "${RABBITMQ_PASSWORD}"
+      Seq__ServerUrl: "${SEQ_URL}"
+      Seq__ApiKey: "${SEQ_API_KEY}"
+    ports:
+      - "${INVENTORYSERVICE_PORT}:80"
+    depends_on:
+      inventorydb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - booking-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ApiGateway (ASP.NET Core - YARP)
   apigateway:
     build:
@@ -220,6 +275,8 @@ services:
         condition: service_started
       paymentservice:
         condition: service_started
+      inventoryservice:
+        condition: service_started
     networks:
       - booking-network
     healthcheck:
@@ -232,6 +289,8 @@ volumes:
   userdb_data:
     driver: local
   bookingdb_data:
+    driver: local
+  inventorydb_data:
     driver: local
   paymentdb_data:
     driver: local

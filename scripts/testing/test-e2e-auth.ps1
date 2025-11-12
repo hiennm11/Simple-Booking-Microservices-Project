@@ -112,9 +112,11 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             }
             
             # Step 3: Create booking with authentication
+            # Use only valid room IDs that exist in InventoryService
+            $validRoomIds = @("ROOM-101", "ROOM-102", "ROOM-201", "ROOM-202")
             $bookingBody = @{
                 UserId = $userId
-                RoomId = "ROOM-$(Get-Random -Minimum 100 -Maximum 999)"
+                RoomId = $validRoomIds | Get-Random
                 Amount = Get-Random -Minimum 100000 -Maximum 1000000
             } | ConvertTo-Json
             
@@ -374,9 +376,11 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             }
             
             # Step 3: Create booking with authentication
+            # Use only valid room IDs that exist in InventoryService
+            $validRoomIds = @("ROOM-101", "ROOM-102", "ROOM-201", "ROOM-202")
             $bookingBody = @{
                 UserId = $userId
-                RoomId = "ROOM-$(Get-Random -Minimum 100 -Maximum 999)"
+                RoomId = $validRoomIds | Get-Random
                 Amount = Get-Random -Minimum 100000 -Maximum 1000000
             } | ConvertTo-Json
             

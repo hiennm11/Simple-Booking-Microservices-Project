@@ -1,8 +1,8 @@
 using Serilog;
-using PaymentService.Data;
-using PaymentService.EventBus;
-using PaymentService.Services;
-using PaymentService.Consumers;
+using Microsoft.EntityFrameworkCore;
+using InventoryService.Data;
+using InventoryService.Services;
+using InventoryService.EventBus;
 using Shared.EventBus;
 using Shared.Extensions;
 using Shared.Middleware;
@@ -27,7 +27,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
-    .Enrich.WithProperty("Service", "PaymentService")
+    .Enrich.WithProperty("Service", "InventoryService")
     .Enrich.WithClientIp()
     .Enrich.WithCorrelationId()
     .Enrich.FromLogContext()
@@ -69,13 +69,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnAuthenticationFailed = context =>
             {
-                Log.Warning("JWT Authentication failed in PaymentService: {Error}", context.Exception.Message);
+                Log.Warning("JWT Authentication failed in InventoryService: {Error}", context.Exception.Message);
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
                 var userId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                Log.Information("JWT Token validated in PaymentService for user: {UserId}", userId);
+                Log.Information("JWT Token validated in InventoryService for user: {UserId}", userId);
                 return Task.CompletedTask;
             }
         };
@@ -83,9 +83,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// Configure MongoDB
-builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDB"));
-builder.Services.AddSingleton<MongoDbContext>();
+// Configure Database
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<InventoryDbContext>(options =>
+{
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.MaxBatchSize(100);
+        npgsqlOptions.CommandTimeout(30);
+    }).EnableSensitiveDataLogging(builder.Environment.IsDevelopment());
+});
 
 // Configure RabbitMQ settings
 builder.Services.Configure<RabbitMQSettings>(builder.Configuration.GetSection("RabbitMQ"));
@@ -96,45 +103,42 @@ builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
 // Register Resilience Pipeline Service
 builder.Services.AddSingleton<IResiliencePipelineService, ResiliencePipelineService>();
 
-// Register Outbox Pattern Services
-builder.Services.AddScoped<IOutboxService, OutboxService>();
-
 // Register Services
-builder.Services.AddScoped<IPaymentService, PaymentServiceImpl>();
+builder.Services.AddScoped<IInventoryService, InventoryManagementService>();
 
 // Register Background Services (Consumers)
-// Note: BookingCreatedConsumer is available but not enabled by default
-// Enable it to automatically process payments when bookings are created
+builder.Services.AddHostedService<InventoryService.Consumers.BookingCreatedConsumer>();
+builder.Services.AddHostedService<InventoryService.Consumers.PaymentFailedConsumer>();
+builder.Services.AddHostedService<InventoryService.Consumers.PaymentSucceededConsumer>();
 
-// Register Dead Letter Queue Handler
-builder.Services.AddHostedService<PaymentService.Consumers.DeadLetterQueueHandler>();
-
-// Register Outbox Publisher Background Service
-builder.Services.AddHostedService<PaymentService.BackgroundServices.OutboxPublisherService>();
-
-// Add health checks with MongoDB database check (use MongoDB:ConnectionString)
-var mongoConn = builder.Configuration["MongoDB:ConnectionString"];
-var hcBuilder = builder.Services.AddHealthChecks();
-if (!string.IsNullOrWhiteSpace(mongoConn))
-{
-    // Use a safe custom health check to avoid throwing on invalid connection strings
-    hcBuilder.Add(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration(
-        "paymentdb",
-        new PaymentService.HealthChecks.MongoConnectionHealthCheck(mongoConn),
-        Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
-        new[] { "db", "mongodb", "paymentdb" }
-    ));
-}
-else
-{
-    // If no connection string is configured, register a degraded check so the service still reports status
-    hcBuilder.AddCheck("paymentdb-config", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Degraded("MongoDB connection string not configured"));
-}
+// Add health checks with PostgreSQL database check
+builder.Services.AddHealthChecks()
+    .AddNpgSql(
+        connectionString!,
+        name: "inventorydb",
+        failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+        tags: new[] { "db", "postgresql", "inventorydb" });
 
 // Add Correlation ID services
 builder.Services.AddCorrelationId();
 
 var app = builder.Build();
+
+// Run database migrations automatically
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Log.Information("Applying database migrations...");
+        await dbContext.Database.MigrateAsync();
+        Log.Information("Database migrations applied successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "An error occurred while migrating the database");
+    }
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
@@ -158,6 +162,8 @@ app.MapControllers();
 
 // Map health check endpoint
 app.MapHealthChecks("/health");
+
+Log.Information("InventoryService is starting...");
 
 app.Run();
 
