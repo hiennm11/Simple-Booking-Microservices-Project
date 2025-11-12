@@ -7,7 +7,6 @@ using RabbitMQ.Client.Exceptions;
 using Shared.Contracts;
 using BookingService.EventBus;
 using BookingService.Data;
-using BookingService.Services;
 using Microsoft.EntityFrameworkCore;
 using Polly;
 using Polly.Retry;
@@ -18,40 +17,40 @@ using Serilog.Context;
 namespace BookingService.Consumers;
 
 /// <summary>
-/// Background service that consumes PaymentSucceeded events from RabbitMQ
+/// Background service that consumes PaymentFailed events from RabbitMQ
 /// </summary>
-public class PaymentSucceededConsumer : BackgroundService
+public class PaymentFailedConsumer : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly RabbitMQSettings _settings;
-    private readonly ILogger<PaymentSucceededConsumer> _logger;
+    private readonly ILogger<PaymentFailedConsumer> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResiliencePipeline _connectionPipeline;
     private IConnection? _connection;
     private IChannel? _channel;
-    private int _retryCount = 0;
-    private readonly int _maxRequeueAttempts;
 
-    public PaymentSucceededConsumer(
+    public PaymentFailedConsumer(
         IServiceProvider serviceProvider,
         IOptions<RabbitMQSettings> settings,
-        ILogger<PaymentSucceededConsumer> logger,
+        ILogger<PaymentFailedConsumer> logger,
         IConfiguration configuration)
-    {
+    { 
         _serviceProvider = serviceProvider;
         _settings = settings.Value;
         _logger = logger;
-        _maxRequeueAttempts = configuration.GetValue<int>("MessageConsumer:MaxRequeueAttempts", 3);
+
+        var maxRetryAttempts = configuration.GetValue<int>("MessageConsumer:MaxRetryAttempts", 3);
         
         _logger.LogInformation(
-            "PaymentSucceededConsumer configured with MaxRequeueAttempts: {MaxAttempts}",
-            _maxRequeueAttempts);
+            "PaymentFailedConsumer configured with MaxRetryAttempts: {MaxAttempts}",
+            maxRetryAttempts);
 
         // Create inline resilience pipeline for message processing
+        // This handles all retries - if it fails after all retries, message goes to DLQ
         _resiliencePipeline = new ResiliencePipelineBuilder()
             .AddRetry(new RetryStrategyOptions
             {
-                MaxRetryAttempts = 3,
+                MaxRetryAttempts = maxRetryAttempts,
                 Delay = TimeSpan.FromSeconds(2),
                 BackoffType = DelayBackoffType.Exponential,
                 UseJitter = true,
@@ -59,7 +58,7 @@ public class PaymentSucceededConsumer : BackgroundService
                 {
                     _logger.LogWarning(
                         "Retrying message processing. Attempt {Attempt}/{MaxAttempts}",
-                        args.AttemptNumber, 3);
+                        args.AttemptNumber, maxRetryAttempts);
                     return ValueTask.CompletedTask;
                 }
             })
@@ -81,7 +80,7 @@ public class PaymentSucceededConsumer : BackgroundService
                 OnRetry = args =>
                 {
                     _logger.LogWarning(
-                        "PaymentSucceededConsumer RabbitMQ connection retry {Attempt}/{MaxAttempts} after {Delay}ms. " +
+                        "PaymentFailedConsumer RabbitMQ connection retry {Attempt}/{MaxAttempts} after {Delay}ms. " +
                         "Waiting for RabbitMQ to become available...",
                         args.AttemptNumber,
                         10,
@@ -94,10 +93,10 @@ public class PaymentSucceededConsumer : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("PaymentSucceededConsumer is starting");
+        _logger.LogInformation("PaymentFailedConsumer is starting");
 
         stoppingToken.Register(() =>
-            _logger.LogInformation("PaymentSucceededConsumer background task is stopping"));
+            _logger.LogInformation("PaymentFailedConsumer background task is stopping"));
 
         try
         {
@@ -111,7 +110,7 @@ public class PaymentSucceededConsumer : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in PaymentSucceededConsumer");
+            _logger.LogError(ex, "Error in PaymentFailedConsumer");
         }
     }
 
@@ -132,12 +131,12 @@ public class PaymentSucceededConsumer : BackgroundService
             };
 
             _connection = await factory.CreateConnectionAsync();
-            _logger.LogInformation("PaymentSucceededConsumer established connection to RabbitMQ");
+            _logger.LogInformation("PaymentFailedConsumer established connection to RabbitMQ");
         });
 
         _channel = await _connection!.CreateChannelAsync();
 
-        var queueName = _settings.Queues.GetValueOrDefault("PaymentSucceeded", "payment_succeeded");
+        var queueName = _settings.Queues.GetValueOrDefault("PaymentFailed", "payment_failed");
 
         await _channel.QueueDeclareAsync(
             queue: queueName,
@@ -159,76 +158,117 @@ public class PaymentSucceededConsumer : BackgroundService
             autoAck: false,
             consumer: consumer);
 
-        _logger.LogInformation("PaymentSucceededConsumer is listening to queue: {QueueName}", queueName);
+        _logger.LogInformation("PaymentFailedConsumer is listening to queue: {QueueName}", queueName);
     }
 
     private async Task HandleMessageAsync(BasicDeliverEventArgs ea)
     {
         var body = ea.Body.ToArray();
         var message = Encoding.UTF8.GetString(body);
+        var deliveryTag = ea.DeliveryTag;
+        var firstAttemptTime = DateTime.UtcNow;
 
         try
         {
-            _logger.LogInformation("Received PaymentSucceeded event: {Message}", message);
+            _logger.LogInformation("Received PaymentFailed event: {Message}", message);
 
             var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             };
 
-            var paymentEvent = JsonSerializer.Deserialize<PaymentSucceededEvent>(message, options);
+            var paymentEvent = JsonSerializer.Deserialize<PaymentFailedEvent>(message, options);
 
-            if (paymentEvent?.Data == null)
+            if (paymentEvent == null)
             {
-                _logger.LogWarning("Invalid PaymentSucceeded event format");
-                // ❌ Permanent failure - don't requeue
-                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
+                _logger.LogWarning("Invalid PaymentFailed event format - sending to DLQ");
+                // ❌ Permanent failure - send to DLQ
+                await SendToDeadLetterQueueAsync(message, "Invalid event format", null, firstAttemptTime, 0);
+                await _channel!.BasicAckAsync(deliveryTag, false);
                 return;
             }
 
-            // ✅ Process with retry policy
+            // ✅ Process with retry policy (resilience pipeline handles all retries)
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
-                await ProcessPaymentSucceededAsync(paymentEvent);
+                await ProcessPaymentFailedAsync(paymentEvent);
             }, CancellationToken.None);
 
             // ✅ Success - acknowledge
-            await _channel!.BasicAckAsync(ea.DeliveryTag, false);
-            _retryCount = 0; // Reset counter
+            await _channel!.BasicAckAsync(deliveryTag, false);
 
-            _logger.LogInformation("PaymentSucceeded event processed successfully for BookingId: {BookingId}",
+            _logger.LogInformation("PaymentFailed event processed successfully for BookingId: {BookingId}",
                 paymentEvent.Data.BookingId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing PaymentSucceeded event: {Message}", message);
+            // ❌ Failed after all resilience pipeline retries - send to DLQ
+            _logger.LogError(ex, 
+                "PaymentFailed event processing failed after all retry attempts. Moving to DLQ. Message: {Message}", 
+                message);
 
-            _retryCount++;
-
-            if (_retryCount >= _maxRequeueAttempts)
-            {
-                // ❌ Max retries reached - send to dead letter queue or log
-                _logger.LogError(
-                    "Message failed after {Attempts} requeue attempts. Moving to DLQ.",
-                    _maxRequeueAttempts);
-
-                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
-                _retryCount = 0;
-
-                // TODO: Store in dead-letter table for manual investigation
-            }
-            else
-            {
-                // ⚠️ Requeue for retry
-                _logger.LogWarning("Requeuing message. Attempt {Attempt}/{Max}",
-                    _retryCount, _maxRequeueAttempts);
-
-                await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: true);
-            }
+            await SendToDeadLetterQueueAsync(message, ex.Message, ex.StackTrace, firstAttemptTime, 3);
+            
+            // Acknowledge to remove from queue (already sent to DLQ)
+            await _channel!.BasicAckAsync(deliveryTag, false);
         }
     }
 
-    private async Task ProcessPaymentSucceededAsync(PaymentSucceededEvent paymentEvent)
+    private async Task SendToDeadLetterQueueAsync(
+        string message,
+        string errorMessage,
+        string? stackTrace,
+        DateTime firstAttemptTime,
+        int retryCount)
+    {
+        try
+        {
+            var dlqName = _settings.Queues.GetValueOrDefault("PaymentFailed", "payment_failed") + "_dlq";
+            
+            // Ensure DLQ exists
+            await _channel!.QueueDeclareAsync(
+                queue: dlqName,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null);
+
+            // Create properties with metadata
+            var properties = new BasicProperties
+            {
+                Persistent = true,
+                Headers = new Dictionary<string, object?>
+                {
+                    ["x-retry-count"] = retryCount,
+                    ["x-first-attempt"] = firstAttemptTime.ToString("O"),
+                    ["x-error-message"] = errorMessage,
+                    ["x-stack-trace"] = stackTrace ?? "",
+                    ["x-original-queue"] = _settings.Queues.GetValueOrDefault("PaymentFailed", "payment_failed"),
+                    ["x-failed-at"] = DateTime.UtcNow.ToString("O")
+                }
+            };
+
+            // Publish to DLQ
+            await _channel.BasicPublishAsync(
+                exchange: "",
+                routingKey: dlqName,
+                mandatory: false,
+                basicProperties: properties,
+                body: Encoding.UTF8.GetBytes(message));
+
+            _logger.LogInformation(
+                "Message sent to Dead Letter Queue: {DLQName}, Error: {Error}, RetryCount: {RetryCount}",
+                dlqName,
+                errorMessage,
+                retryCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send message to Dead Letter Queue");
+        }
+    }
+
+    private async Task ProcessPaymentFailedAsync(PaymentFailedEvent paymentEvent)
     {
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
@@ -236,7 +276,10 @@ public class PaymentSucceededConsumer : BackgroundService
         // Push correlation ID from event to log context
         using (LogContext.PushProperty("CorrelationId", paymentEvent.CorrelationId))
         {
-            _logger.LogInformation("Processing PaymentSucceeded event for BookingId: {BookingId}", paymentEvent.Data.BookingId);
+            _logger.LogInformation(
+                "Processing PaymentFailed event for BookingId: {BookingId}, Reason: {Reason}", 
+                paymentEvent.Data.BookingId, 
+                paymentEvent.Data.Reason);
 
             var booking = await dbContext.Bookings
                 .FirstOrDefaultAsync(b => b.Id == paymentEvent.Data.BookingId);
@@ -249,28 +292,32 @@ public class PaymentSucceededConsumer : BackgroundService
 
             _logger.LogInformation("Found booking {BookingId} with current status: {Status}", booking.Id, booking.Status);
 
-            if (booking.Status == "CONFIRMED")
+            if (booking.Status == "CANCELLED")
             {
-                _logger.LogInformation("Booking {BookingId} is already confirmed. Skipping update.", booking.Id);
+                _logger.LogInformation("Booking {BookingId} is already cancelled. Skipping update.", booking.Id);
                 return;
             }
 
-            // Update booking status to CONFIRMED
-            booking.Status = "CONFIRMED";
-            booking.ConfirmedAt = DateTime.UtcNow;
+            // Update booking status to CANCELLED due to payment failure
+            booking.Status = "CANCELLED";
+            booking.CancellationReason = $"Payment failed: {paymentEvent.Data.Reason}";
+            booking.CancelledAt = DateTime.UtcNow;
             booking.UpdatedAt = DateTime.UtcNow;
 
-            _logger.LogInformation("Updating booking {BookingId} status to CONFIRMED", booking.Id);
+            _logger.LogInformation("Updating booking {BookingId} status to CANCELLED due to payment failure", booking.Id);
 
             await dbContext.SaveChangesAsync();
 
-            _logger.LogInformation("Booking {BookingId} status updated to CONFIRMED", booking.Id);
+            _logger.LogInformation(
+                "Booking {BookingId} status updated to CANCELLED. Reason: {Reason}", 
+                booking.Id, 
+                booking.CancellationReason);
         }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("PaymentSucceededConsumer is stopping");
+        _logger.LogInformation("PaymentFailedConsumer is stopping");
 
         if (_channel != null)
         {

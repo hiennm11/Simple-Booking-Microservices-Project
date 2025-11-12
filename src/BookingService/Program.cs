@@ -6,6 +6,8 @@ using BookingService.EventBus;
 using BookingService.Consumers;
 using Shared.EventBus;
 using Shared.Extensions;
+using Shared.Middleware;
+using Shared.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -28,7 +30,7 @@ Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "BookingService")
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
     .WriteTo.Seq(
         serverUrl: builder.Configuration["Seq:ServerUrl"] ?? "http://seq:5341",
         apiKey: builder.Configuration["Seq:ApiKey"])
@@ -108,6 +110,7 @@ builder.Services.AddScoped<IBookingService, BookingServiceImpl>();
 
 // Register Background Services (Consumers)
 builder.Services.AddHostedService<PaymentSucceededConsumer>();
+builder.Services.AddHostedService<PaymentFailedConsumer>();
 
 // Register Outbox Publisher Background Service
 builder.Services.AddHostedService<BookingService.BackgroundServices.OutboxPublisherService>();
@@ -119,6 +122,9 @@ builder.Services.AddHealthChecks()
         name: "bookingdb",
         failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
         tags: new[] { "db", "postgresql", "bookingdb" });
+
+// Add Correlation ID services
+builder.Services.AddCorrelationId();
 
 var app = builder.Build();
 
@@ -143,6 +149,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Use Correlation ID middleware (MUST be first)
+app.UseCorrelationId();
 
 // Add global exception handling
 app.UseGlobalExceptionHandler();

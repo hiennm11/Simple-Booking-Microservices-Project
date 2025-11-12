@@ -20,7 +20,7 @@ public class Payment
     public decimal Amount { get; set; }
 
     [BsonElement("status")]
-    public string Status { get; set; } = "PENDING"; // PENDING, SUCCESS, FAILED
+    public string Status { get; set; } = "PENDING"; // PENDING, SUCCESS, FAILED, PERMANENTLY_FAILED
 
     [BsonElement("paymentMethod")]
     public string PaymentMethod { get; set; } = "CREDIT_CARD";
@@ -39,4 +39,14 @@ public class Payment
 
     [BsonElement("processedAt")]
     public DateTime? ProcessedAt { get; set; }
+
+    [BsonElement("retryCount")]
+    public int RetryCount { get; set; } = 0;
+
+    [BsonElement("lastRetryAt")]
+    public DateTime? LastRetryAt { get; set; }
+
+    [BsonElement("correlationId")]
+    [BsonRepresentation(BsonType.String)]
+    public Guid CorrelationId { get; set; }
 }

@@ -43,10 +43,24 @@ public class PaymentServiceImplTests
             .Setup(x => x.AddToOutboxAsync(It.IsAny<object>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        // Mock CorrelationIdAccessor
+        var correlationIdAccessorMock = new Mock<Shared.Services.ICorrelationIdAccessor>();
+        correlationIdAccessorMock
+            .Setup(x => x.GetCorrelationIdAsGuid())
+            .Returns(Guid.NewGuid());
+
+        // Mock IConfiguration
+        var configurationMock = new Mock<Microsoft.Extensions.Configuration.IConfiguration>();
+        configurationMock
+            .Setup(x => x["PaymentRetry:MaxRetries"])
+            .Returns("3");
+
         _sut = new PaymentServiceImpl(
             _dbContextMock.Object,
             outboxServiceMock.Object,
-            _loggerMock.Object);
+            correlationIdAccessorMock.Object,
+            _loggerMock.Object,
+            configurationMock.Object);
     }
 
     #region ProcessPaymentAsync Tests

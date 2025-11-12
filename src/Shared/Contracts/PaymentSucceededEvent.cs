@@ -6,6 +6,7 @@ namespace Shared.Contracts;
 public class PaymentSucceededEvent
 {
     public Guid EventId { get; set; } = Guid.NewGuid();
+    public Guid CorrelationId { get; set; }
     public string EventName { get; set; } = "PaymentSucceeded";
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public PaymentSucceededData Data { get; set; } = null!;

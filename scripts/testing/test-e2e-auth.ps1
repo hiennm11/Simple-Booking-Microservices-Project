@@ -49,6 +49,8 @@ $script:results = [hashtable]::Synchronized(@{
     flowTimes = @()
     failureReasons = @()
     authTimes = @()
+    retryCount = 0
+    retrySuccessCount = 0
 })
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -116,15 +118,32 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 Amount = Get-Random -Minimum 100000 -Maximum 1000000
             } | ConvertTo-Json
             
-            $booking = Invoke-RestMethod -Uri "$gatewayUrl/api/bookings" `
+            # Capture response headers including X-Correlation-ID
+            $bookingResponse = Invoke-WebRequest -Uri "$gatewayUrl/api/bookings" `
                 -Method Post `
                 -Headers $headers `
                 -ContentType "application/json" `
                 -Body $bookingBody `
                 -TimeoutSec 60
             
+            $booking = $bookingResponse.Content | ConvertFrom-Json
             $bookingId = $booking.id
             $bookingAmount = $booking.amount
+            
+            # Extract correlation ID from response headers
+            # PowerShell may return an array, so get first element
+            $correlationIdHeader = $bookingResponse.Headers['X-Correlation-ID']
+            if ($correlationIdHeader) {
+                # Handle both single value and array
+                $correlationId = if ($correlationIdHeader -is [array]) { 
+                    $correlationIdHeader[0] 
+                } else { 
+                    $correlationIdHeader.ToString() 
+                }
+                Write-Host "[INFO] Flow #$flowId - Correlation ID: $correlationId" -ForegroundColor Cyan
+                # Add correlation ID to headers for subsequent requests
+                $headers['X-Correlation-ID'] = $correlationId
+            }
             
             # Step 4: Process payment with authentication
             $paymentBody = @{
@@ -132,18 +151,126 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 Amount = $bookingAmount
             } | ConvertTo-Json
             
-            $payment = Invoke-RestMethod -Uri "$gatewayUrl/api/payment/pay" `
-                -Method Post `
+            # Debug: Verify correlation ID is in headers
+            if ($headers.ContainsKey('X-Correlation-ID')) {
+                Write-Host "[DEBUG] Flow #$flowId - Sending payment request with X-Correlation-ID: $($headers['X-Correlation-ID'])" -ForegroundColor DarkGray
+            }
+            
+            # Handle payment - may return 400 if payment fails
+            try {
+                $paymentResponse = Invoke-WebRequest -Uri "$gatewayUrl/api/payment/pay" `
+                    -Method Post `
+                    -Headers $headers `
+                    -ContentType "application/json" `
+                    -Body $paymentBody `
+                    -TimeoutSec 60 `
+                    -SkipHttpErrorCheck
+                
+                $payment = $paymentResponse.Content | ConvertFrom-Json
+                Write-Host "[INFO] Flow #$flowId - Initial payment: $($payment.status) [CorrelationID: $correlationId]" -ForegroundColor Gray
+            } catch {
+                    # If SkipHttpErrorCheck not available, catch and check error message
+                    $errorMsg = $_.Exception.Message
+                    if ($errorMsg -like "*400*" -or $errorMsg -like "*Bad Request*") {
+                        # Try to extract response from error
+                        $payment = $null
+                        if ($_.ErrorDetails.Message) {
+                            $payment = $_.ErrorDetails.Message | ConvertFrom-Json
+                        }
+                        if ($payment) {
+                            Write-Host "[INFO] Flow #$flowId - Initial payment: $($payment.status) [CorrelationID: $correlationId]" -ForegroundColor Yellow
+                        } else {
+                            throw
+                        }
+                    } else {
+                        throw
+                    }
+                }                # Step 5: Check payment status - retry if failed (10% chance of failure)
+            if ($payment.status -eq "FAILED") {
+                Write-Host "[RETRY] Flow #$flowId - Payment failed, attempting retry with CorrelationID: $correlationId..." -ForegroundColor Yellow
+                
+                # Retry payment (up to 3 times if needed)
+                $attemptCount = 0
+                $maxRetries = 5
+                $paymentSucceeded = $false
+                
+                $lockTaken = $false
+                try {
+                    [System.Threading.Monitor]::Enter($results.SyncRoot, [ref]$lockTaken)
+                    $results.retryCount++
+                } finally {
+                    if ($lockTaken) { [System.Threading.Monitor]::Exit($results.SyncRoot) }
+                }
+                
+                while ($attemptCount -lt $maxRetries -and -not $paymentSucceeded) {
+                    $attemptCount++
+                    
+                    $retryBody = @{
+                        BookingId = $bookingId
+                    } | ConvertTo-Json
+                    
+                    # Handle retry payment - may return 400 if payment fails again
+                    # Note: headers already contains X-Correlation-ID from booking creation
+                    try {
+                        $retryPayment = Invoke-RestMethod -Uri "$gatewayUrl/api/payment/retry" `
+                            -Method Post `
+                            -Headers $headers `
+                            -ContentType "application/json" `
+                            -Body $retryBody `
+                            -TimeoutSec 60 `
+                            -SkipHttpErrorCheck
+                    } catch {
+                        $errorMsg = $_.Exception.Message
+                        if ($errorMsg -like "*400*" -or $errorMsg -like "*Bad Request*") {
+                            $retryPayment = $null
+                            if ($_.ErrorDetails.Message) {
+                                $retryPayment = $_.ErrorDetails.Message | ConvertFrom-Json
+                            }
+                            if (-not $retryPayment) {
+                                throw
+                            }
+                        } else {
+                            throw
+                        }
+                    }
+                    
+                    # Wait for event processing
+                    Start-Sleep -Milliseconds 8000
+                    
+                    if ($retryPayment.status -eq "SUCCESS") {
+                        Write-Host "[RETRY-OK] Flow #$flowId - Payment succeeded on retry #$attemptCount [CorrelationID: $correlationId]" -ForegroundColor Green
+                        $paymentSucceeded = $true
+                        
+                        $lockTaken = $false
+                        try {
+                            [System.Threading.Monitor]::Enter($results.SyncRoot, [ref]$lockTaken)
+                            $results.retrySuccessCount++
+                        } finally {
+                            if ($lockTaken) { [System.Threading.Monitor]::Exit($results.SyncRoot) }
+                        }
+                    } else {
+                        Write-Host "[RETRY-FAIL] Flow #$flowId - Retry #$attemptCount failed [CorrelationID: $correlationId]" -ForegroundColor Yellow
+                    }
+                }
+                
+                if (-not $paymentSucceeded) {
+                    Write-Host "[RETRY-EXHAUSTED] Flow #$flowId - All $maxRetries retries failed [CorrelationID: $correlationId]" -ForegroundColor Red
+                }
+            }
+
+            # Step 6: Wait for event processing (Outbox pattern polls every 1 second + processing time)
+            Start-Sleep -Milliseconds 8000           
+            
+            # Step 7: Verify booking status with authentication
+            # Note: headers already contains X-Correlation-ID
+            $updatedBooking = Invoke-RestMethod -Uri "$gatewayUrl/api/bookings/$bookingId" `
+                -Method Get `
                 -Headers $headers `
-                -ContentType "application/json" `
-                -Body $paymentBody `
                 -TimeoutSec 60
             
-            # Step 5: Wait for event processing (Outbox pattern polls every 1 second + processing time)
-            Start-Sleep -Milliseconds 8000
-            
-            # Step 6: Verify booking status with authentication
-            $updatedBooking = Invoke-RestMethod -Uri "$gatewayUrl/api/bookings/$bookingId" `
+            # Step 8: Verify payment status
+            # Note: headers already contains X-Correlation-ID
+            $finalPayment = Invoke-RestMethod -Uri "$gatewayUrl/api/payment/booking/$bookingId" `
                 -Method Get `
                 -Headers $headers `
                 -TimeoutSec 60
@@ -153,7 +280,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             $authTime = $authStopwatch.Elapsed.TotalMilliseconds
             
             if ($updatedBooking.status -eq "CONFIRMED") {
-                Write-Host "[OK] Flow #$flowId - Auth: $([math]::Round($authTime, 0))ms, Total: $([math]::Round($elapsed, 0))ms (Booking: $bookingId)" -ForegroundColor Green
+                Write-Host "[OK] Flow #$flowId - Auth: $([math]::Round($authTime, 0))ms, Total: $([math]::Round($elapsed, 0))ms (Booking: $bookingId, Payment: $($finalPayment.status), Retries: $($finalPayment.retryCount))" -ForegroundColor Green
                 
                 $lockTaken = $false
                 try {
@@ -269,18 +396,106 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 Amount = $bookingAmount
             } | ConvertTo-Json
             
-            $payment = Invoke-RestMethod -Uri "$GatewayUrl/api/payment/pay" `
-                -Method Post `
-                -Headers $headers `
-                -ContentType "application/json" `
-                -Body $paymentBody `
-                -TimeoutSec 60
+            # Handle payment - may return 400 if payment fails
+            try {
+                $payment = Invoke-RestMethod -Uri "$GatewayUrl/api/payment/pay" `
+                    -Method Post `
+                    -Headers $headers `
+                    -ContentType "application/json" `
+                    -Body $paymentBody `
+                    -TimeoutSec 60 `
+                    -SkipHttpErrorCheck
+                    
+                Write-Host "[INFO] Flow #$i - Initial payment: $($payment.status)" -ForegroundColor Gray
+            } catch {
+                # If SkipHttpErrorCheck not available, catch and check error message
+                $errorMsg = $_.Exception.Message
+                if ($errorMsg -like "*400*" -or $errorMsg -like "*Bad Request*") {
+                    # Try to extract response from error
+                    $payment = $null
+                    if ($_.ErrorDetails.Message) {
+                        $payment = $_.ErrorDetails.Message | ConvertFrom-Json
+                    }
+                    if ($payment) {
+                        Write-Host "[INFO] Flow #$i - Initial payment: $($payment.status)" -ForegroundColor Yellow
+                    } else {
+                        throw
+                    }
+                } else {
+                    throw
+                }
+            }
             
             # Step 5: Wait for event processing (Outbox pattern polls every 1 second + processing time)
             Start-Sleep -Milliseconds 8000
             
-            # Step 6: Verify booking status with authentication
+            # Step 6: Check payment status - retry if failed (10% chance of failure)
+            if ($payment.status -eq "FAILED") {
+                Write-Host "[RETRY] Flow #$i - Payment failed, attempting retry..." -ForegroundColor Yellow
+                
+                # Retry payment (up to 3 times if needed)
+                $attemptCount = 0
+                $maxRetries = 3
+                $paymentSucceeded = $false
+                
+                $results.retryCount++
+                
+                while ($attemptCount -lt $maxRetries -and -not $paymentSucceeded) {
+                    $attemptCount++
+                    
+                    $retryBody = @{
+                        BookingId = $bookingId
+                    } | ConvertTo-Json
+                    
+                    # Handle retry payment - may return 400 if payment fails again
+                    try {
+                        $retryPayment = Invoke-RestMethod -Uri "$GatewayUrl/api/payment/retry" `
+                            -Method Post `
+                            -Headers $headers `
+                            -ContentType "application/json" `
+                            -Body $retryBody `
+                            -TimeoutSec 60 `
+                            -SkipHttpErrorCheck
+                    } catch {
+                        $errorMsg = $_.Exception.Message
+                        if ($errorMsg -like "*400*" -or $errorMsg -like "*Bad Request*") {
+                            $retryPayment = $null
+                            if ($_.ErrorDetails.Message) {
+                                $retryPayment = $_.ErrorDetails.Message | ConvertFrom-Json
+                            }
+                            if (-not $retryPayment) {
+                                throw
+                            }
+                        } else {
+                            throw
+                        }
+                    }
+                    
+                    # Wait for event processing
+                    Start-Sleep -Milliseconds 8000
+                    
+                    if ($retryPayment.status -eq "SUCCESS") {
+                        Write-Host "[RETRY-OK] Flow #$i - Payment succeeded on retry #$attemptCount" -ForegroundColor Green
+                        $paymentSucceeded = $true
+                        $results.retrySuccessCount++
+                    } else {
+                        Write-Host "[RETRY-FAIL] Flow #$i - Retry #$attemptCount failed" -ForegroundColor Yellow
+                    }
+                }
+                
+                if (-not $paymentSucceeded) {
+                    Write-Host "[RETRY-EXHAUSTED] Flow #$i - All $maxRetries retries failed" -ForegroundColor Red
+                }
+            }
+            
+            # Step 7: Verify booking status with authentication
             $updatedBooking = Invoke-RestMethod -Uri "$GatewayUrl/api/bookings/$bookingId" `
+                -Method Get `
+                -Headers $headers `
+                -TimeoutSec 60
+            
+            # Step 8: Verify payment status
+            $finalPayment = Invoke-RestMethod -Uri "$GatewayUrl/api/payment/booking/$bookingId" `
                 -Method Get `
                 -Headers $headers `
                 -TimeoutSec 60
@@ -290,7 +505,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             $authTime = $authStopwatch.Elapsed.TotalMilliseconds
             
             if ($updatedBooking.status -eq "CONFIRMED") {
-                Write-Host "[OK] Flow #$i - Auth: $([math]::Round($authTime, 0))ms, Total: $([math]::Round($elapsed, 0))ms (Booking: $bookingId)" -ForegroundColor Green
+                Write-Host "[OK] Flow #$i - Auth: $([math]::Round($authTime, 0))ms, Total: $([math]::Round($elapsed, 0))ms (Booking: $bookingId, Payment: $($finalPayment.status), Retries: $($finalPayment.retryCount))" -ForegroundColor Green
                 $results.successCount++
                 $results.flowTimes += $elapsed
                 $results.authTimes += $authTime
@@ -343,6 +558,14 @@ Write-Host "Total Flows:       $NumberOfFlows"
 Write-Host "Successful:        $successCount" -ForegroundColor Green
 Write-Host "Failed:            $failCount" -ForegroundColor $(if ($failCount -gt 0) { "Red" } else { "Green" })
 Write-Host "Success Rate:      $([math]::Round(($successCount / $NumberOfFlows) * 100, 2))%"
+Write-Host ""
+Write-Host "Payment Retry Statistics:"
+Write-Host "  Initial Failures:  $($results.retryCount)" -ForegroundColor Yellow
+Write-Host "  Retry Successes:   $($results.retrySuccessCount)" -ForegroundColor Green
+if ($results.retryCount -gt 0) {
+    $retrySuccessRate = ($results.retrySuccessCount / $results.retryCount) * 100
+    Write-Host "  Retry Success %:   $([math]::Round($retrySuccessRate, 2))%" -ForegroundColor $(if ($retrySuccessRate -gt 50) { "Green" } else { "Yellow" })
+}
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "   Performance Metrics" -ForegroundColor Cyan
@@ -416,10 +639,11 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "   Next Steps" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "1. Test unauthorized access:          .\test-auth.ps1" -ForegroundColor Gray
-Write-Host "2. Check JWT logs in Seq:             http://localhost:5341" -ForegroundColor Gray
-Write-Host "3. Monitor API Gateway auth:          docker logs apigateway" -ForegroundColor Gray
-Write-Host "4. Run security scan:                 .\scripts\testing\test-security.ps1" -ForegroundColor Gray
+Write-Host "1. Check retry events in Seq:         http://localhost:5341 (@Message like '%retry%')" -ForegroundColor Gray
+Write-Host "2. Check payment retry stats:         MongoDB - payments collection" -ForegroundColor Gray
+Write-Host "3. Monitor RabbitMQ queues:           http://localhost:15672" -ForegroundColor Gray
+Write-Host "4. Check JWT logs in Seq:             http://localhost:5341" -ForegroundColor Gray
+Write-Host "5. Monitor API Gateway auth:          docker logs apigateway" -ForegroundColor Gray
 Write-Host ""
 
 # Exit with appropriate code

@@ -31,7 +31,7 @@ public class OutboxPublisherService : BackgroundService
         _pollingInterval = TimeSpan.FromSeconds(
             configuration.GetValue<int>("OutboxPublisher:PollingIntervalSeconds", 10));
         _batchSize = configuration.GetValue<int>("OutboxPublisher:BatchSize", 100);
-        _maxRetries = configuration.GetValue<int>("OutboxPublisher:MaxRetries", 5);
+        _maxRetries = configuration.GetValue<int>("OutboxPublisher:MaxRetries", 3);
         
         _logger.LogInformation(
             "OutboxPublisher configured: PollingInterval={PollingInterval}s, BatchSize={BatchSize}, MaxRetries={MaxRetries}",
@@ -86,13 +86,33 @@ public class OutboxPublisherService : BackgroundService
 
         foreach (var message in messages)
         {
-            // Skip messages that have exceeded max retry attempts
+            // Send messages that have exceeded max retry attempts to DLQ
             if (message.RetryCount >= _maxRetries)
             {
-                _logger.LogWarning(
-                    "Message {MessageId} has exceeded max retries ({MaxRetries}), skipping. Manual intervention required.",
+                _logger.LogError(
+                    "Outbox message {MessageId} has exceeded max retries ({MaxRetries}). Moving to Dead Letter Queue.",
                     message.Id,
                     _maxRetries);
+                
+                try
+                {
+                    await SendToDeadLetterQueueAsync(message, scope, cancellationToken);
+                    
+                    // Mark as published to remove from outbox (it's now in DLQ)
+                    await outboxService.MarkAsPublishedAsync(message.Id, cancellationToken);
+                    
+                    _logger.LogInformation(
+                        "Outbox message {MessageId} moved to DLQ and removed from outbox",
+                        message.Id);
+                }
+                catch (Exception dlqEx)
+                {
+                    _logger.LogError(
+                        dlqEx,
+                        "Failed to move outbox message {MessageId} to DLQ. Will retry next cycle.",
+                        message.Id);
+                }
+                
                 continue;
             }
 
@@ -136,6 +156,35 @@ public class OutboxPublisherService : BackgroundService
                     cancellationToken);
             }
         }
+    }
+
+    private async Task SendToDeadLetterQueueAsync(
+        Models.OutboxMessage message,
+        IServiceScope scope,
+        CancellationToken cancellationToken)
+    {
+        var mongoDbContext = scope.ServiceProvider.GetRequiredService<MongoDbContext>();
+        
+        // Create a dead letter message record
+        var deadLetterMessage = new Models.DeadLetterMessage
+        {
+            SourceQueue = "outbox_" + message.EventType.ToLower(),
+            EventType = message.EventType,
+            Payload = message.Payload,
+            ErrorMessage = message.LastError ?? "Failed after max retry attempts in Outbox Publisher",
+            StackTrace = null, // Outbox doesn't store stack traces
+            AttemptCount = message.RetryCount,
+            FirstAttemptAt = message.CreatedAt,
+            FailedAt = DateTime.UtcNow,
+            Resolved = false
+        };
+        
+        await mongoDbContext.DeadLetterMessages.InsertOneAsync(deadLetterMessage, cancellationToken: cancellationToken);
+        
+        _logger.LogInformation(
+            "Outbox message {MessageId} stored in Dead Letter collection with ID {DLQId}",
+            message.Id,
+            deadLetterMessage.Id);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

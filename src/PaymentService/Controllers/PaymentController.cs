@@ -103,4 +103,45 @@ public class PaymentController : ControllerBase
             return StatusCode(500, new { message = "An error occurred while retrieving the payment", error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Retry a failed payment
+    /// </summary>
+    /// <param name="request">Retry payment request</param>
+    /// <returns>Payment response</returns>
+    [HttpPost("retry")]
+    [ProducesResponseType(typeof(PaymentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<PaymentResponse>> RetryPayment([FromBody] RetryPaymentRequest request)
+    {
+        try
+        {
+            _logger.LogInformation("Received payment retry request for BookingId: {BookingId}", request.BookingId);
+
+            var result = await _paymentService.RetryPaymentAsync(request);
+
+            if (result.Status == "SUCCESS")
+            {
+                _logger.LogInformation("Payment retry succeeded for BookingId: {BookingId}", request.BookingId);
+                return Ok(result);
+            }
+            else
+            {
+                _logger.LogWarning("Payment retry failed for BookingId: {BookingId}", request.BookingId);
+                return BadRequest(result);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Invalid payment retry attempt for BookingId: {BookingId}", request.BookingId);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrying payment for BookingId: {BookingId}", request.BookingId);
+            return StatusCode(500, new { message = "An error occurred while retrying the payment", error = ex.Message });
+        }
+    }
 }
