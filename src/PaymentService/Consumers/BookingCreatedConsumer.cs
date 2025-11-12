@@ -11,6 +11,7 @@ using PaymentService.DTOs;
 using Polly;
 using Polly.Retry;
 using System.Net.Sockets;
+using Serilog.Context;
 
 namespace PaymentService.Consumers;
 
@@ -241,29 +242,34 @@ public class BookingCreatedConsumer : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var paymentService = scope.ServiceProvider.GetRequiredService<IPaymentService>();
 
-        _logger.LogInformation("Automatically processing payment for BookingId: {BookingId}", 
-            bookingEvent.Data.BookingId);
-
-        // Create payment request from booking event
-        var paymentRequest = new ProcessPaymentRequest
+        // Push correlation ID from event to log context
+        using (LogContext.PushProperty("CorrelationId", bookingEvent.CorrelationId))
         {
-            BookingId = bookingEvent.Data.BookingId,
-            Amount = bookingEvent.Data.Amount,
-            PaymentMethod = "CREDIT_CARD"
-        };
-
-        try
-        {
-            var paymentResult = await paymentService.ProcessPaymentAsync(paymentRequest);
-            
-            _logger.LogInformation("Payment processed for BookingId: {BookingId}, Status: {Status}, PaymentId: {PaymentId}",
-                bookingEvent.Data.BookingId, paymentResult.Status, paymentResult.Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to process payment for BookingId: {BookingId}", 
+            _logger.LogInformation("Automatically processing payment for BookingId: {BookingId}", 
                 bookingEvent.Data.BookingId);
-            throw; // Re-throw to trigger message requeue
+
+            // Create payment request from booking event with correlation ID
+            var paymentRequest = new ProcessPaymentRequest
+            {
+                BookingId = bookingEvent.Data.BookingId,
+                Amount = bookingEvent.Data.Amount,
+                PaymentMethod = "CREDIT_CARD",
+                CorrelationId = bookingEvent.CorrelationId
+            };
+
+            try
+            {
+                var paymentResult = await paymentService.ProcessPaymentAsync(paymentRequest);
+                
+                _logger.LogInformation("Payment processed for BookingId: {BookingId}, Status: {Status}, PaymentId: {PaymentId}",
+                    bookingEvent.Data.BookingId, paymentResult.Status, paymentResult.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to process payment for BookingId: {BookingId}", 
+                    bookingEvent.Data.BookingId);
+                throw; // Re-throw to trigger message requeue
+            }
         }
     }
 

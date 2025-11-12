@@ -1,7 +1,11 @@
 using System.Text;
 using ApiGateway.Middleware;
 using Shared.Extensions;
+using Shared.Middleware;
+using Shared.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -23,7 +27,7 @@ Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "ApiGateway")
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
     .WriteTo.Seq(
         serverUrl: builder.Configuration["Seq:ServerUrl"] ?? "http://seq:5341",
         apiKey: builder.Configuration["Seq:ApiKey"])
@@ -127,6 +131,9 @@ builder.Services.AddReverseProxy()
 // Add basic health checks (YARP handles downstream health checks)
 builder.Services.AddHealthChecks();
 
+// Add Correlation ID services
+builder.Services.AddCorrelationId();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -134,6 +141,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Use Correlation ID middleware (MUST be first to track all requests)
+app.UseCorrelationId();
 
 // Use global exception handler
 app.UseGlobalExceptionHandler();

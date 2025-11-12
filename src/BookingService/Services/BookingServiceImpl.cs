@@ -5,7 +5,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Shared.Contracts;
 using Shared.EventBus;
+using Shared.Services;
 using Polly;
+using Serilog.Context;
 
 namespace BookingService.Services;
 
@@ -27,77 +29,92 @@ public class BookingServiceImpl : IBookingService
 {
     private readonly BookingDbContext _dbContext;
     private readonly IOutboxService _outboxService;
+    private readonly ICorrelationIdAccessor _correlationIdAccessor;
     private readonly ILogger<BookingServiceImpl> _logger;
 
     public BookingServiceImpl(
         BookingDbContext dbContext,
         IOutboxService outboxService,
+        ICorrelationIdAccessor correlationIdAccessor,
         ILogger<BookingServiceImpl> logger)
     {
         _dbContext = dbContext;
         _outboxService = outboxService;
+        _correlationIdAccessor = correlationIdAccessor;
         _logger = logger;
     }
 
     public async Task<BookingResponse> CreateBookingAsync(CreateBookingRequest request, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Creating booking for user {UserId}, room {RoomId}", request.UserId, request.RoomId);
-
-        // Start a database transaction to ensure atomicity
-        using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        
-        try
+        // Get correlation ID from HTTP context, or generate a new one if not available
+        var correlationId = _correlationIdAccessor.GetCorrelationIdAsGuid();
+        if (correlationId == Guid.Empty)
         {
-            // 1. Create and save the booking
-            var booking = new Booking
-            {
-                Id = Guid.NewGuid(),
-                UserId = request.UserId,
-                RoomId = request.RoomId,
-                Amount = request.Amount,
-                Status = "PENDING",
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _dbContext.Bookings.Add(booking);
-            
-            // 2. Create the event
-            var bookingCreatedEvent = new BookingCreatedEvent
-            {
-                EventId = Guid.NewGuid(),
-                EventName = "BookingCreated",
-                Timestamp = DateTime.UtcNow,
-                Data = new BookingCreatedData
-                {
-                    BookingId = booking.Id,
-                    UserId = booking.UserId,
-                    RoomId = booking.RoomId,
-                    Amount = booking.Amount,
-                    Status = booking.Status
-                }
-            };
-
-            // 3. Save event to outbox table (in same transaction!)
-            await _outboxService.AddToOutboxAsync(
-                bookingCreatedEvent, 
-                "BookingCreated", 
-                cancellationToken);
-
-            // 4. Commit transaction - both booking and outbox message are saved atomically
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            _logger.LogInformation(
-                "Booking created with ID: {BookingId} and event saved to outbox", 
-                booking.Id);
-
-            return MapToResponse(booking);
+            correlationId = Guid.NewGuid();
+            _logger.LogWarning("No correlation ID found in context, generated new one: {CorrelationId}", correlationId);
         }
-        catch (Exception ex)
+        
+        using (LogContext.PushProperty("CorrelationId", correlationId))
         {
-            _logger.LogError(ex, "Failed to create booking and save event to outbox");
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
+            _logger.LogInformation("Creating booking for user {UserId}, room {RoomId}", request.UserId, request.RoomId);
+
+            // Start a database transaction to ensure atomicity
+            using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            
+            try
+            {
+                // 1. Create and save the booking
+                var booking = new Booking
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = request.UserId,
+                    RoomId = request.RoomId,
+                    Amount = request.Amount,
+                    Status = "PENDING",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _dbContext.Bookings.Add(booking);
+                
+                // 2. Create the event with correlation ID
+                var bookingCreatedEvent = new BookingCreatedEvent
+                {
+                    EventId = Guid.NewGuid(),
+                    CorrelationId = correlationId,
+                    EventName = "BookingCreated",
+                    Timestamp = DateTime.UtcNow,
+                    Data = new BookingCreatedData
+                    {
+                        BookingId = booking.Id,
+                        UserId = booking.UserId,
+                        RoomId = booking.RoomId,
+                        Amount = booking.Amount,
+                        Status = booking.Status
+                    }
+                };
+
+                // 3. Save event to outbox table (in same transaction!)
+                await _outboxService.AddToOutboxAsync(
+                    bookingCreatedEvent, 
+                    "BookingCreated", 
+                    cancellationToken);
+
+                // 4. Commit transaction - both booking and outbox message are saved atomically
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Booking created with ID: {BookingId} and event saved to outbox", 
+                    booking.Id);
+
+                return MapToResponse(booking);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create booking and save event to outbox");
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
         }
     }
 

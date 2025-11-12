@@ -6,7 +6,9 @@ using PaymentService.EventBus;
 using PaymentService.Models;
 using Shared.Contracts;
 using Shared.EventBus;
+using Shared.Services;
 using Polly;
+using Serilog.Context;
 
 namespace PaymentService.Services;
 
@@ -17,17 +19,20 @@ public class PaymentServiceImpl : IPaymentService
 {
     private readonly MongoDbContext _dbContext;
     private readonly IOutboxService _outboxService;
+    private readonly ICorrelationIdAccessor _correlationIdAccessor;
     private readonly ILogger<PaymentServiceImpl> _logger;
     private readonly int _maxPaymentRetries;
 
     public PaymentServiceImpl(
         MongoDbContext dbContext,
         IOutboxService outboxService,
+        ICorrelationIdAccessor correlationIdAccessor,
         ILogger<PaymentServiceImpl> logger,
         IConfiguration configuration)
     {
         _dbContext = dbContext;
         _outboxService = outboxService;
+        _correlationIdAccessor = correlationIdAccessor;
         _logger = logger;
         _maxPaymentRetries = configuration.GetValue<int>("PaymentRetry:MaxRetries", 3);
         
@@ -38,8 +43,15 @@ public class PaymentServiceImpl : IPaymentService
 
     public async Task<PaymentResponse> ProcessPaymentAsync(ProcessPaymentRequest request)
     {
-        _logger.LogInformation("Processing payment for BookingId: {BookingId}, Amount: {Amount}", 
-            request.BookingId, request.Amount);
+        // Get correlation ID from request or HTTP context
+        var correlationId = request.CorrelationId != Guid.Empty 
+            ? request.CorrelationId 
+            : _correlationIdAccessor.GetCorrelationIdAsGuid();
+
+        using (LogContext.PushProperty("CorrelationId", correlationId))
+        {
+            _logger.LogInformation("Processing payment for BookingId: {BookingId}, Amount: {Amount}", 
+                request.BookingId, request.Amount);
 
         // Check if payment already exists for this booking
         var existingPayment = await _dbContext.Payments
@@ -52,13 +64,14 @@ public class PaymentServiceImpl : IPaymentService
             return MapToResponse(existingPayment);
         }
 
-        // Create payment record
+        // Create payment record with correlation ID
         var payment = new Payment
         {
             BookingId = request.BookingId,
             Amount = request.Amount,
             PaymentMethod = request.PaymentMethod,
             Status = "PENDING",
+            CorrelationId = correlationId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -88,10 +101,11 @@ public class PaymentServiceImpl : IPaymentService
 
             _logger.LogInformation("Payment processed successfully: {PaymentId}", payment.Id);
 
-            // Save PaymentSucceeded event to outbox
+            // Save PaymentSucceeded event to outbox with correlation ID
             var paymentEvent = new PaymentSucceededEvent
             {
                 EventId = Guid.NewGuid(),
+                CorrelationId = correlationId,
                 EventName = "PaymentSucceeded",
                 Timestamp = DateTime.UtcNow,
                 Data = new PaymentSucceededData
@@ -143,10 +157,11 @@ public class PaymentServiceImpl : IPaymentService
 
             _logger.LogWarning("Payment processing failed: {PaymentId}", payment.Id);
 
-            // Save PaymentFailed event to outbox
+            // Save PaymentFailed event to outbox with correlation ID
             var paymentFailedEvent = new PaymentFailedEvent
             {
                 EventId = Guid.NewGuid(),
+                CorrelationId = correlationId,
                 EventName = "PaymentFailed",
                 Timestamp = DateTime.UtcNow,
                 Data = new PaymentFailedData
@@ -181,6 +196,7 @@ public class PaymentServiceImpl : IPaymentService
         }
 
         return MapToResponse(payment);
+        }
     }
 
     public async Task<PaymentResponse?> GetPaymentByIdAsync(Guid paymentId)
@@ -246,8 +262,18 @@ public class PaymentServiceImpl : IPaymentService
             throw new InvalidOperationException($"No failed payment found for booking {request.BookingId}");
         }
 
-        // Check if max retries reached
-        if (existingPayment.RetryCount >= _maxPaymentRetries)
+        // Use the correlation ID from the original payment
+        var correlationId = existingPayment.CorrelationId != Guid.Empty 
+            ? existingPayment.CorrelationId 
+            : Guid.NewGuid();
+
+        using (LogContext.PushProperty("CorrelationId", correlationId))
+        {
+            _logger.LogInformation("Retrying payment {PaymentId} with correlation ID {CorrelationId}", 
+                existingPayment.Id, correlationId);
+
+            // Check if max retries reached
+            if (existingPayment.RetryCount >= _maxPaymentRetries)
         {
             _logger.LogError(
                 "Max retry attempts ({MaxRetries}) reached for payment {PaymentId}. Moving to Dead Letter Queue.",
@@ -329,10 +355,11 @@ public class PaymentServiceImpl : IPaymentService
 
             _logger.LogInformation("Payment retry successful: {PaymentId}", existingPayment.Id);
 
-            // Save PaymentSucceeded event to outbox
+            // Save PaymentSucceeded event to outbox with correlation ID
             var paymentEvent = new PaymentSucceededEvent
             {
                 EventId = Guid.NewGuid(),
+                CorrelationId = correlationId,
                 EventName = "PaymentSucceeded",
                 Timestamp = DateTime.UtcNow,
                 Data = new PaymentSucceededData
@@ -383,10 +410,11 @@ public class PaymentServiceImpl : IPaymentService
                 existingPayment.RetryCount,
                 _maxPaymentRetries);
 
-            // Save PaymentFailed event to outbox
+            // Save PaymentFailed event to outbox with correlation ID
             var paymentFailedEvent = new PaymentFailedEvent
             {
                 EventId = Guid.NewGuid(),
+                CorrelationId = correlationId,
                 EventName = "PaymentFailed",
                 Timestamp = DateTime.UtcNow,
                 Data = new PaymentFailedData
@@ -417,7 +445,8 @@ public class PaymentServiceImpl : IPaymentService
             }
         }
 
-        return MapToResponse(existingPayment);
+            return MapToResponse(existingPayment);
+        }
     }
 
     /// <summary>

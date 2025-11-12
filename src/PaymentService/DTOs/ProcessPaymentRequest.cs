@@ -15,4 +15,6 @@ public class ProcessPaymentRequest
     public decimal Amount { get; set; }
 
     public string PaymentMethod { get; set; } = "CREDIT_CARD";
+
+    public Guid CorrelationId { get; set; }
 }

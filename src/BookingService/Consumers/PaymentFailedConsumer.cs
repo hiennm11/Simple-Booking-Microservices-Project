@@ -12,6 +12,7 @@ using Polly;
 using Polly.Retry;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using Serilog.Context;
 
 namespace BookingService.Consumers;
 
@@ -272,42 +273,46 @@ public class PaymentFailedConsumer : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
 
-        _logger.LogInformation(
-            "Processing PaymentFailed event for BookingId: {BookingId}, Reason: {Reason}", 
-            paymentEvent.Data.BookingId, 
-            paymentEvent.Data.Reason);
-
-        var booking = await dbContext.Bookings
-            .FirstOrDefaultAsync(b => b.Id == paymentEvent.Data.BookingId);
-
-        if (booking == null)
+        // Push correlation ID from event to log context
+        using (LogContext.PushProperty("CorrelationId", paymentEvent.CorrelationId))
         {
-            _logger.LogWarning("Booking not found with ID: {BookingId}", paymentEvent.Data.BookingId);
-            return;
+            _logger.LogInformation(
+                "Processing PaymentFailed event for BookingId: {BookingId}, Reason: {Reason}", 
+                paymentEvent.Data.BookingId, 
+                paymentEvent.Data.Reason);
+
+            var booking = await dbContext.Bookings
+                .FirstOrDefaultAsync(b => b.Id == paymentEvent.Data.BookingId);
+
+            if (booking == null)
+            {
+                _logger.LogWarning("Booking not found with ID: {BookingId}", paymentEvent.Data.BookingId);
+                return;
+            }
+
+            _logger.LogInformation("Found booking {BookingId} with current status: {Status}", booking.Id, booking.Status);
+
+            if (booking.Status == "CANCELLED")
+            {
+                _logger.LogInformation("Booking {BookingId} is already cancelled. Skipping update.", booking.Id);
+                return;
+            }
+
+            // Update booking status to CANCELLED due to payment failure
+            booking.Status = "CANCELLED";
+            booking.CancellationReason = $"Payment failed: {paymentEvent.Data.Reason}";
+            booking.CancelledAt = DateTime.UtcNow;
+            booking.UpdatedAt = DateTime.UtcNow;
+
+            _logger.LogInformation("Updating booking {BookingId} status to CANCELLED due to payment failure", booking.Id);
+
+            await dbContext.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Booking {BookingId} status updated to CANCELLED. Reason: {Reason}", 
+                booking.Id, 
+                booking.CancellationReason);
         }
-
-        _logger.LogInformation("Found booking {BookingId} with current status: {Status}", booking.Id, booking.Status);
-
-        if (booking.Status == "CANCELLED")
-        {
-            _logger.LogInformation("Booking {BookingId} is already cancelled. Skipping update.", booking.Id);
-            return;
-        }
-
-        // Update booking status to CANCELLED due to payment failure
-        booking.Status = "CANCELLED";
-        booking.CancellationReason = $"Payment failed: {paymentEvent.Data.Reason}";
-        booking.CancelledAt = DateTime.UtcNow;
-        booking.UpdatedAt = DateTime.UtcNow;
-
-        _logger.LogInformation("Updating booking {BookingId} status to CANCELLED due to payment failure", booking.Id);
-
-        await dbContext.SaveChangesAsync();
-
-        _logger.LogInformation(
-            "Booking {BookingId} status updated to CANCELLED. Reason: {Reason}", 
-            booking.Id, 
-            booking.CancellationReason);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

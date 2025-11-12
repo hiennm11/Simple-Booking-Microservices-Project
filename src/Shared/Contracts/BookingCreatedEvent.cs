@@ -6,6 +6,7 @@ namespace Shared.Contracts;
 public class BookingCreatedEvent
 {
     public Guid EventId { get; set; } = Guid.NewGuid();
+    public Guid CorrelationId { get; set; }
     public string EventName { get; set; } = "BookingCreated";
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public BookingCreatedData Data { get; set; } = null!;

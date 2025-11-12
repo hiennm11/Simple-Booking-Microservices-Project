@@ -5,6 +5,8 @@ using PaymentService.Services;
 using PaymentService.Consumers;
 using Shared.EventBus;
 using Shared.Extensions;
+using Shared.Middleware;
+using Shared.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -27,7 +29,7 @@ Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "PaymentService")
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
     .WriteTo.Seq(
         serverUrl: builder.Configuration["Seq:ServerUrl"] ?? "http://seq:5341",
         apiKey: builder.Configuration["Seq:ApiKey"])
@@ -127,6 +129,9 @@ else
     hcBuilder.AddCheck("paymentdb-config", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Degraded("MongoDB connection string not configured"));
 }
 
+// Add Correlation ID services
+builder.Services.AddCorrelationId();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -134,6 +139,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Use Correlation ID middleware (MUST be first)
+app.UseCorrelationId();
 
 // Add global exception handling
 app.UseGlobalExceptionHandler();

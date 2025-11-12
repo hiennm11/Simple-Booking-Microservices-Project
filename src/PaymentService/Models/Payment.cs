@@ -45,4 +45,8 @@ public class Payment
 
     [BsonElement("lastRetryAt")]
     public DateTime? LastRetryAt { get; set; }
+
+    [BsonElement("correlationId")]
+    [BsonRepresentation(BsonType.String)]
+    public Guid CorrelationId { get; set; }
 }

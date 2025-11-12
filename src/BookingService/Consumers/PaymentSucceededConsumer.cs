@@ -13,6 +13,7 @@ using Polly;
 using Polly.Retry;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using Serilog.Context;
 
 namespace BookingService.Consumers;
 
@@ -232,35 +233,39 @@ public class PaymentSucceededConsumer : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
 
-        _logger.LogInformation("Processing PaymentSucceeded event for BookingId: {BookingId}", paymentEvent.Data.BookingId);
-
-        var booking = await dbContext.Bookings
-            .FirstOrDefaultAsync(b => b.Id == paymentEvent.Data.BookingId);
-
-        if (booking == null)
+        // Push correlation ID from event to log context
+        using (LogContext.PushProperty("CorrelationId", paymentEvent.CorrelationId))
         {
-            _logger.LogWarning("Booking not found with ID: {BookingId}", paymentEvent.Data.BookingId);
-            return;
+            _logger.LogInformation("Processing PaymentSucceeded event for BookingId: {BookingId}", paymentEvent.Data.BookingId);
+
+            var booking = await dbContext.Bookings
+                .FirstOrDefaultAsync(b => b.Id == paymentEvent.Data.BookingId);
+
+            if (booking == null)
+            {
+                _logger.LogWarning("Booking not found with ID: {BookingId}", paymentEvent.Data.BookingId);
+                return;
+            }
+
+            _logger.LogInformation("Found booking {BookingId} with current status: {Status}", booking.Id, booking.Status);
+
+            if (booking.Status == "CONFIRMED")
+            {
+                _logger.LogInformation("Booking {BookingId} is already confirmed. Skipping update.", booking.Id);
+                return;
+            }
+
+            // Update booking status to CONFIRMED
+            booking.Status = "CONFIRMED";
+            booking.ConfirmedAt = DateTime.UtcNow;
+            booking.UpdatedAt = DateTime.UtcNow;
+
+            _logger.LogInformation("Updating booking {BookingId} status to CONFIRMED", booking.Id);
+
+            await dbContext.SaveChangesAsync();
+
+            _logger.LogInformation("Booking {BookingId} status updated to CONFIRMED", booking.Id);
         }
-
-        _logger.LogInformation("Found booking {BookingId} with current status: {Status}", booking.Id, booking.Status);
-
-        if (booking.Status == "CONFIRMED")
-        {
-            _logger.LogInformation("Booking {BookingId} is already confirmed. Skipping update.", booking.Id);
-            return;
-        }
-
-        // Update booking status to CONFIRMED
-        booking.Status = "CONFIRMED";
-        booking.ConfirmedAt = DateTime.UtcNow;
-        booking.UpdatedAt = DateTime.UtcNow;
-
-        _logger.LogInformation("Updating booking {BookingId} status to CONFIRMED", booking.Id);
-
-        await dbContext.SaveChangesAsync();
-
-        _logger.LogInformation("Booking {BookingId} status updated to CONFIRMED", booking.Id);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
