@@ -26,6 +26,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "ApiGateway")
+    .Enrich.WithClientIp()
+    .Enrich.WithCorrelationId()
     .Enrich.FromLogContext()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
     .WriteTo.Seq(

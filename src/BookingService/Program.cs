@@ -29,6 +29,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "BookingService")
+    .Enrich.WithClientIp()
+    .Enrich.WithCorrelationId()
     .Enrich.FromLogContext()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
     .WriteTo.Seq(
@@ -111,6 +113,7 @@ builder.Services.AddScoped<IBookingService, BookingServiceImpl>();
 // Register Background Services (Consumers)
 builder.Services.AddHostedService<PaymentSucceededConsumer>();
 builder.Services.AddHostedService<PaymentFailedConsumer>();
+builder.Services.AddHostedService<InventoryReservationFailedConsumer>();
 
 // Register Outbox Publisher Background Service
 builder.Services.AddHostedService<BookingService.BackgroundServices.OutboxPublisherService>();

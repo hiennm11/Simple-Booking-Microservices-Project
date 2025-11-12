@@ -630,7 +630,26 @@ Centralized routing and security entry point.
 ### Fault Tolerance
 If PaymentService fails, BookingService still runs independently.
 
-## 📚 Learning Resources
+## 📚 Documentation & Learning Resources
+
+### 📖 Complete System Documentation
+
+**NEW: Complete Flow Documentation**:
+- **[Complete System Flow](docs/COMPLETE_SYSTEM_FLOW.md)** - All scenarios, event flows, patterns
+- **[Correlation ID Guide](docs/CORRELATION_ID_GUIDE.md)** - Testing and tracking with Seq
+
+**Quickstart Guides**:
+- **[Quick Start](docs/general/QUICKSTART.md)** - Get started in 5 minutes
+- **[Testing Guide](docs/general/TESTING_QUICK_START.md)** - Run E2E tests
+- **[Environment Configuration](docs/phase1-foundation/ENV_CONFIGURATION_COMPLETE.md)** - Setup .env files
+
+**Phase Documentation**:
+- **Phase 1**: Foundation & Docker setup
+- **Phase 2**: Core services (Booking, Payment, User)
+- **Phase 3**: Event integration & Saga pattern
+- **Phase 4**: API Gateway & security
+- **Phase 5**: Observability (Seq, correlation tracking)
+- **Phase 6**: Advanced features (Outbox, DLQ, Inventory service)
 
 ### 🎓 Knowledge Brief - Comprehensive Learning Guide
 
@@ -645,14 +664,16 @@ A structured learning resource organized in the `/brief/` folder covering all co
 - ✅ Microservices fundamentals with real project examples
 - ✅ Event-driven architecture deep dive
 - ✅ Outbox pattern implementation guide
+- ✅ Saga pattern with compensating actions
+- ✅ Correlation ID tracking and observability
 - ✅ Interview preparation materials
 - ✅ 8-week study plan (70% Microservices + 30% CS)
-- ⏳ More topics being added based on project features
 
 **Use Cases**:
 1. **Learning from Scratch**: Follow the 8-week roadmap
 2. **Interview Preparation**: 1-week focused review
 3. **Concept Reference**: Quick lookup when needed
+4. **Testing & Debugging**: Use correlation ID guide
 
 **See**: `/brief/README.md` for full navigation guide
 
@@ -663,8 +684,11 @@ A structured learning resource organized in the `/brief/` folder covering all co
 ### Phase 6 Continuation (Advanced Features)
 
 - [x] ~~Implement Outbox Pattern for reliable event publishing~~ ✅ **COMPLETED** (November 7, 2025)
+- [x] ~~Implement Saga Pattern with compensating actions~~ ✅ **COMPLETED** (November 12, 2025)
+- [x] ~~Add Inventory Service for room availability management~~ ✅ **COMPLETED** (November 12, 2025)
+- [x] ~~Implement Correlation ID tracking with Serilog enrichers~~ ✅ **COMPLETED** (November 12, 2025)
+- [x] ~~Graceful error handling for business failures~~ ✅ **COMPLETED** (November 12, 2025)
 - [ ] Add Notification Service for emails/SMS notifications
-- [ ] Implement Saga Pattern for complex distributed transactions
 - [ ] Add Circuit Breaker pattern with Polly
 - [ ] Implement Distributed Tracing with OpenTelemetry
 - [ ] Add Prometheus + Grafana for advanced monitoring

@@ -22,6 +22,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "UserService")
+    .Enrich.WithClientIp()
+    .Enrich.WithCorrelationId()
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.Seq(
