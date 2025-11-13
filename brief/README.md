@@ -166,17 +166,19 @@ Use this checklist to track your learning:
 - [x] Event choreography (✅ Implemented + Documented)
 - [x] Correlation IDs (✅ Implemented + Documented)
 
-### Resilience ⬜
-- [ ] Retry with Polly (✅ Implemented)
-- [ ] Exponential backoff (✅ Implemented)
-- [ ] Connection resilience (✅ Implemented)
-- [ ] DLQ handling (✅ Implemented)
+### Resilience ✅
+- [x] Retry with Polly (✅ Implemented + Documented)
+- [x] Exponential backoff (✅ Implemented + Documented)
+- [x] Connection resilience (✅ Implemented + Documented)
+- [x] DLQ handling (✅ Implemented + Documented)
+- [x] Circuit breaker (📋 Planned - Documented)
 
-### Security ⬜
-- [ ] JWT authentication (✅ Implemented)
-- [ ] Authorization (✅ Implemented)
-- [ ] Rate limiting (✅ Implemented)
-- [ ] Password hashing (✅ Implemented)
+### Security ✅
+- [x] JWT authentication (✅ Implemented + Documented)
+- [x] Authorization patterns (✅ Implemented + Documented)
+- [x] Rate limiting (✅ Implemented + Documented)
+- [x] Security best practices (✅ Documented)
+- [x] Password hashing (✅ Implemented + Documented)
 
 ### Observability ⬜
 - [ ] Structured logging (✅ Implemented)
@@ -232,6 +234,8 @@ Use this checklist to track your learning:
 - **JWT Auth**: `/docs/phase4-gateway-security/JWT_AUTHENTICATION_IMPLEMENTATION.md`
 - **Rate Limiting**: `/docs/phase4-gateway-security/RATE_LIMITING_IMPLEMENTATION.md`
 - **Retry Logic**: `/docs/phase3-event-integration/RETRY_LOGIC_AND_POLLY.md`
+- **Connection Resilience**: `/docs/phase3-event-integration/PHASE4_CONNECTION_RETRY.md`
+- **Dead Letter Queue**: `/docs/phase3-event-integration/COMPLETE_DLQ_FLOW.md`
 - **Observability**: `/docs/phase5-observability/PHASE5_OBSERVABILITY.md`
 
 ### Quick Start Guides
