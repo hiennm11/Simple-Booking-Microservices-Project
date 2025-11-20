@@ -1,7 +1,56 @@
+# Build outputs
 bin/
 obj/
+out/
+publish/
+
+# User-specific files
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
+
+# IDE
 .vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+README*
+LICENSE*
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*
+
+# Tests
+*.Tests/
+*Tests.csproj
+test/
+tests/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+Jenkinsfile
+
+# Other
+*.log
+*.tmp
+.env
+.env.*

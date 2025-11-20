@@ -16,12 +16,19 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
     serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+    // Prevent slow connection attacks by requiring minimum data rates
+    serverOptions.Limits.MinRequestBodyDataRate = new Microsoft.AspNetCore.Server.Kestrel.Core.MinDataRate(
+        bytesPerSecond: 100, gracePeriod: TimeSpan.FromSeconds(10));
+    serverOptions.Limits.MinResponseDataRate = new Microsoft.AspNetCore.Server.Kestrel.Core.MinDataRate(
+        bytesPerSecond: 100, gracePeriod: TimeSpan.FromSeconds(10));
 });
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("Service", "UserService")
+    .Enrich.WithMachineName()
+    .Enrich.WithEnvironmentName()
     .Enrich.WithClientIp()
     .Enrich.WithCorrelationId()
     .Enrich.FromLogContext()
@@ -41,6 +48,11 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<UserDbContext>(options =>
     options.UseNpgsql(connectionString, npgsqlOptions =>
     {
+        // Enable automatic retry on transient failures (network issues, connection drops)
+        npgsqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorCodesToAdd: null);
         npgsqlOptions.MaxBatchSize(100);
         npgsqlOptions.CommandTimeout(30);
     }).EnableSensitiveDataLogging(builder.Environment.IsDevelopment()));
